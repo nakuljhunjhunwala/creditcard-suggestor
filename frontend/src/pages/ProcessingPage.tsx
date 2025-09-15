@@ -99,7 +99,15 @@ export function ProcessingPage() {
                        jobStatus?.activeJob?.currentStep || 
                        session.status;
   const currentStep = PROCESSING_STEPS[currentStatus as keyof typeof PROCESSING_STEPS];
-  const StepIcon = currentStep?.icon || Loader2;
+
+  // Prefer job progress if available, fall back to session values
+  const effectiveProgress = Math.max(
+    0,
+    Math.min(
+      jobStatus?.activeJob?.progress ?? jobStatus?.sessionProgress ?? session.progress ?? 0,
+      100
+    )
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -122,7 +130,7 @@ export function ProcessingPage() {
                 ) : jobStatus?.activeJob?.status === 'completed' ? (
                   <CheckCircle2 className="h-16 w-16 text-green-500" />
                 ) : (
-                  <StepIcon className={`h-16 w-16 text-blue-600 ${!['completed', 'failed'].includes(jobStatus?.activeJob?.status || '') ? 'animate-pulse' : ''}`} />
+                  <Loader2 className="h-16 w-16 text-blue-600 animate-spin" />
                 )}
               </div>
               <CardTitle className="text-2xl">
@@ -138,9 +146,9 @@ export function ProcessingPage() {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>Progress</span>
-                  <span>{session.progress}%</span>
+                  <span>{effectiveProgress}%</span>
                 </div>
-                <Progress value={session.progress} className="h-3" />
+                <Progress value={effectiveProgress} className="h-3" />
               </div>
 
               {/* Current Step Info */}

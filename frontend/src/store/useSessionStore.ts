@@ -166,7 +166,7 @@ export const useSessionStore = create<SessionState>()(
                             if (!currentState.isPolling && currentState.pollingTimeoutId) {
                                 currentState.pollJobStatus();
                             }
-                        }, 10000); // Poll every 10 seconds
+                        }, 5000); // Poll every 5 seconds
 
                         set({ pollingTimeoutId: timeoutId });
                     } else {
