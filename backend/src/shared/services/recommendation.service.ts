@@ -169,7 +169,15 @@ export class RecommendationService {
                         prioritizeSignupBonus: false,
                         includeBusinessCards: options.includeBusinessCards || false,
                     },
+                    totalCards: eligibleCards.length,
                     processingTimeMs: processingTime,
+                    generatedAt: new Date(),
+                    summary: {
+                        topRecommendation: fallbackRecommendations[0]?.primaryReason || 'No recommendations available',
+                        potentialSavings: 0,
+                        averageScore: fallbackRecommendations.reduce((sum, rec) => sum + rec.score, 0) / fallbackRecommendations.length || 0,
+                        categoriesAnalyzed: 0
+                    }
                 };
             }
 
@@ -587,16 +595,40 @@ export class RecommendationService {
             where: filters,
         });
 
-        // Get benefits separately to avoid deep include issues
+        // Get benefits with category details
         const cardIds = cards.map((c) => c.id);
         const benefits = await prisma.cardBenefit.findMany({
             where: { cardId: { in: cardIds } },
         });
 
+        // Get all categories and subcategories for benefit resolution
+        const [categories, subCategories] = await Promise.all([
+            prisma.category.findMany({ select: { id: true, name: true, slug: true } }),
+            prisma.subCategory.findMany({ select: { id: true, name: true, slug: true } }),
+        ]);
+
+        const categoryMap = categories.reduce((acc, cat) => {
+            acc[cat.id] = cat;
+            return acc;
+        }, {} as Record<string, any>);
+
+        const subCategoryMap = subCategories.reduce((acc, sub) => {
+            acc[sub.id] = sub;
+            return acc;
+        }, {} as Record<string, any>);
+
+        // Enhance benefits with category details
+        const enhancedBenefits = benefits.map((benefit) => ({
+            ...benefit,
+            category: benefit.categoryId ? categoryMap[benefit.categoryId] : null,
+            subCategory: benefit.subCategoryId ? subCategoryMap[benefit.subCategoryId] : null,
+            earnRate: Number(benefit.rate) * 100, // Convert 0.03 to 3 for easier display
+        }));
+
         // Map benefits to cards
         const cardsWithBenefits = cards.map((card) => ({
             ...card,
-            benefits: benefits.filter((b) => b.cardId === card.id),
+            benefits: enhancedBenefits.filter((b) => b.cardId === card.id),
         }));
 
         return cardsWithBenefits;

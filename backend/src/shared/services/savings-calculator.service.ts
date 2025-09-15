@@ -143,8 +143,8 @@ export class SavingsCalculatorService {
         // Determine earn rates
         const currentEarnRate = this.getCurrentEarnRate(baselineCard, pattern);
         const cardEarnRate = bestBenefit ?
-            Number(bestBenefit.earnRate || card.defaultCashback || this.DEFAULT_EARN_RATE) :
-            Number(card.defaultCashback || this.DEFAULT_EARN_RATE);
+            bestBenefit.earnRate :
+            (Number(card.defaultCashback || card.defaultPoints || this.DEFAULT_EARN_RATE) * 100);
 
         // Calculate earnings
         const currentEarnings = pattern.totalSpent * (currentEarnRate / 100);
@@ -203,19 +203,35 @@ export class SavingsCalculatorService {
             score += 100;
         }
 
-        // Partial category name match
+        // Handle common category name variations
         if (benefit.category?.name && pattern.categoryName) {
             const benefitCategory = benefit.category.name.toLowerCase();
             const patternCategory = pattern.categoryName.toLowerCase();
 
-            if (benefitCategory.includes(patternCategory) || patternCategory.includes(benefitCategory)) {
-                score += 50;
+            // Exact matches with common variations
+            const categoryMappings = {
+                'dining': ['dining & food delivery', 'restaurants', 'food'],
+                'dining & food delivery': ['dining', 'restaurants', 'food'],
+                'travel': ['transportation', 'airlines', 'hotels'],
+                'grocery': ['groceries', 'supermarket', 'food'],
+                'gas': ['gasoline', 'fuel', 'gas stations'],
+                'healthcare': ['healthcare & wellness', 'medical'],
+                'healthcare & wellness': ['healthcare', 'medical', 'wellness'],
+            };
+
+            if (benefitCategory === patternCategory) {
+                score += 100;
+            } else if ((categoryMappings as any)[benefitCategory]?.includes(patternCategory) ||
+                (categoryMappings as any)[patternCategory]?.includes(benefitCategory)) {
+                score += 90;
+            } else if (benefitCategory.includes(patternCategory) || patternCategory.includes(benefitCategory)) {
+                score += 60;
             }
         }
 
         // Subcategory match
         if (benefit.subCategory?.name?.toLowerCase() === pattern.subCategoryName?.toLowerCase()) {
-            score += 75;
+            score += 80;
         }
 
         // MCC code match (very reliable)
@@ -223,26 +239,53 @@ export class SavingsCalculatorService {
             const mccMatches = pattern.mccCodes.filter(code =>
                 benefit.mccCodes.includes(code)
             ).length;
-            score += mccMatches * 30;
+            score += mccMatches * 40; // Higher weight for MCC matches
         }
 
-        // Special handling for "Other" category - match with general/default benefits
-        if (pattern.categoryName === 'Other' &&
-            (benefit.category?.name === 'General' || benefit.isDefault)) {
-            score += 25;
+        // Special handling for "Other" category - only match with general benefits that don't have specific categories
+        if (pattern.categoryName === 'Other' && !benefit.category) {
+            score += 30;
         }
 
-        // Keyword matching in descriptions
+        // Keyword matching in descriptions and titles
         if (benefit.description && pattern.categoryName) {
             const description = benefit.description.toLowerCase();
+            const title = benefit.title?.toLowerCase() || '';
             const category = pattern.categoryName.toLowerCase();
 
-            if (description.includes(category)) {
-                score += 20;
+            if (description.includes(category) || title.includes(category)) {
+                score += 25;
             }
         }
 
-        return score;
+        // Penalize benefits that have very specific categories that don't match
+        if (benefit.category && pattern.categoryName !== 'Other' &&
+            benefit.category.name.toLowerCase() !== pattern.categoryName.toLowerCase() &&
+            !this.isRelatedCategory(benefit.category.name, pattern.categoryName)) {
+            score -= 20;
+        }
+
+        return Math.max(0, score);
+    }
+
+    /**
+     * Check if two categories are related
+     */
+    private isRelatedCategory(benefitCategory: string, patternCategory: string): boolean {
+        const related: Record<string, string[]> = {
+            'dining': ['food', 'restaurants', 'delivery'],
+            'travel': ['transportation', 'airlines', 'hotels', 'transit'],
+            'grocery': ['food', 'supermarket'],
+            'entertainment': ['streaming', 'movies', 'games'],
+            'gas': ['fuel', 'gasoline'],
+            'healthcare': ['medical', 'wellness', 'pharmacy'],
+        };
+
+        const benefit = benefitCategory.toLowerCase();
+        const pattern = patternCategory.toLowerCase();
+
+        return related[benefit]?.some((r: any) => pattern.includes(r)) ||
+            related[pattern]?.some((r: any) => benefit.includes(r)) || false;
     }
 
     /**
@@ -260,7 +303,7 @@ export class SavingsCalculatorService {
      * Get point value multiplier for different reward programs
      */
     private getPointValue(rewardProgram: string): number {
-        return this.POINT_VALUES[rewardProgram] || this.POINT_VALUES.Default;
+        return (this.POINT_VALUES as any)[rewardProgram] || this.POINT_VALUES.Default;
     }
 
     /**
@@ -332,12 +375,12 @@ export class SavingsCalculatorService {
 
         // Apply filters
         if (criteria.maxAnnualFee !== undefined) {
-            filtered = filtered.filter(a => a.annualFee <= criteria.maxAnnualFee);
+            filtered = filtered.filter(a => a.annualFee <= (criteria.maxAnnualFee || 0));
         }
 
         if (criteria.minROI) {
             filtered = filtered.filter(a =>
-                a.yearlyROI >= criteria.minROI || a.annualFee === 0
+                a.yearlyROI >= (criteria.minROI || 0) || a.annualFee === 0
             );
         }
 
