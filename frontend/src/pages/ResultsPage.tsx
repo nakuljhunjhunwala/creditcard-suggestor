@@ -17,10 +17,10 @@ import {
   Calendar,
   Building2,
   Award,
-  Zap,
-  Shield,
   TrendingDown
 } from 'lucide-react';
+import { CreditCardVisual } from '../components/CreditCardVisual';
+import { DonutChart } from '../components/DonutChart';
 
 export function ResultsPage() {
   const navigate = useNavigate();
@@ -35,7 +35,9 @@ export function ResultsPage() {
     fetchRecommendations,
     fetchAnalysis,
     isLoading,
-    error
+    error,
+    currentPage,
+    totalPages
   } = useSessionStore();
 
   useEffect(() => {
@@ -49,7 +51,7 @@ export function ResultsPage() {
       try {
         await fetchSessionStatus(sessionToken);
         await Promise.all([
-          fetchTransactions(),
+          fetchTransactions(1),
           fetchRecommendations(),
           fetchAnalysis()
         ]);
@@ -127,22 +129,34 @@ export function ResultsPage() {
     );
   }
 
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      fetchTransactions(currentPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < (totalPages || 1)) {
+      fetchTransactions(currentPage + 1);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-[110rem]">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <Button
             variant="ghost"
             onClick={() => navigate('/')}
-            className="flex items-center gap-2 hover:bg-blue-100 text-blue-700"
+            className="flex items-center gap-2"
           >
             <ArrowLeft className="h-4 w-4" />
             Start New Analysis
           </Button>
           <Button 
             variant="outline" 
-            className="flex items-center gap-2 hover:bg-blue-50 border-blue-200"
+            className="flex items-center gap-2"
             onClick={handleExportReport}
           >
             <Download className="h-4 w-4" />
@@ -151,18 +165,16 @@ export function ResultsPage() {
         </div>
 
         {/* Title Section */}
-        <div className="text-center bg-white rounded-2xl p-8 shadow-lg border mb-8">
-          <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Your Credit Card Analysis
-          </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Based on your spending patterns, here are your personalized insights and recommendations
-          </p>
+        <div className="mb-8">
+          <h1 className="text-3xl font-semibold text-foreground">Your Credit Card Analysis</h1>
+          <p className="text-muted-foreground mt-1">Insights and recommendations based on your spending.</p>
         </div>
 
-        <div className="space-y-8">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Main column */}
+          <div className="lg:col-span-9 space-y-8">
+            {/* Summary Cards (placed after header row) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
             <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200 hover:shadow-lg transition-all duration-300 hover:scale-105">
               <CardContent className="flex items-center p-6">
                 <div className="bg-green-500 p-3 rounded-full mr-4 shadow-lg">
@@ -221,145 +233,57 @@ export function ResultsPage() {
                 </div>
               </CardContent>
             </Card>
-          </div>
+            </div>
 
-          {/* Credit Card Recommendations - MAIN FEATURE */}
+            {/* Credit Card Recommendations */}
           {recommendations && recommendations.length > 0 && (
-            <Card className="bg-white shadow-xl border-0">
-              <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg">
-                <CardTitle className="flex items-center gap-3 text-2xl">
-                  <Award className="h-8 w-8" />
-                  🏆 Recommended Credit Cards
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Award className="h-6 w-6" />
+                  Recommended Credit Cards
                 </CardTitle>
-                <CardDescription className="text-blue-100 text-lg">
+                <CardDescription>
                   Based on your spending patterns, these cards offer the best value for you
                 </CardDescription>
               </CardHeader>
-              <CardContent className="p-8">
-                <div className="space-y-8">
-                  {recommendations.slice(0, 5).map((rec, index) => (
-                    <div key={rec.card?.id || index} className="border-2 border-gray-100 rounded-2xl p-6 hover:border-blue-200 hover:shadow-lg transition-all duration-300">
-                      <div className="flex items-start justify-between mb-6">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-3">
-                            <span className="bg-gradient-to-r from-blue-500 to-purple-500 text-white text-lg font-bold px-4 py-2 rounded-full shadow-lg">
-                              #{rec.rank}
-                            </span>
-                            <div>
-                              <h3 className="text-2xl font-bold text-gray-800">{rec.card?.name || `Card ${rec.rank}`}</h3>
-                              <p className="text-lg text-gray-600">{rec.card?.issuer} • {rec.card?.network}</p>
-                            </div>
-                          </div>
-                          <p className="text-gray-700 mb-4 text-lg">{rec.card?.description || rec.primaryReason}</p>
-                          
-                          {/* Card Details Grid */}
-                          <div className="grid md:grid-cols-4 gap-4 mb-4">
-                            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                              <p className="text-sm text-green-600 font-medium">Annual Fee</p>
-                              <p className="text-xl font-bold text-green-700">
-                                {rec.card?.annualFee ? formatCurrency(Number(rec.card.annualFee)) : 'N/A'}
-                              </p>
-                            </div>
-                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                              <p className="text-sm text-blue-600 font-medium">Signup Bonus</p>
-                              <p className="text-xl font-bold text-blue-700">
-                                {rec.card?.signupBonus ? `${Number(rec.card.signupBonus).toLocaleString()} pts` : 'N/A'}
-                              </p>
-                            </div>
-                            <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                              <p className="text-sm text-purple-600 font-medium">Score</p>
-                              <p className="text-xl font-bold text-purple-700">{rec.score}/100</p>
-                            </div>
-                            <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-                              <p className="text-sm text-yellow-600 font-medium">Credit Req.</p>
-                              <p className="text-lg font-bold text-yellow-700 capitalize">{rec.card?.creditRequirement}</p>
-                            </div>
-                          </div>
-
-                          {/* Pros and Cons */}
-                          <div className="grid md:grid-cols-2 gap-6 mb-4">
-                            {rec.pros && rec.pros.length > 0 && (
-                              <div>
-                                <h4 className="font-semibold text-green-700 mb-2 flex items-center gap-2">
-                                  <Zap className="h-4 w-4" />
-                                  Pros
-                                </h4>
-                                <ul className="space-y-1">
-                                  {rec.pros.map((pro, i) => (
-                                    <li key={i} className="text-green-600 text-sm flex items-start gap-2">
-                                      <span className="text-green-500 mt-1">•</span>
-                                      {pro}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            {rec.cons && rec.cons.length > 0 && (
-                              <div>
-                                <h4 className="font-semibold text-red-700 mb-2 flex items-center gap-2">
-                                  <Shield className="h-4 w-4" />
-                                  Cons
-                                </h4>
-                                <ul className="space-y-1">
-                                  {rec.cons.map((con, i) => (
-                                    <li key={i} className="text-red-600 text-sm flex items-start gap-2">
-                                      <span className="text-red-500 mt-1">•</span>
-                                      {con}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Apply Button */}
-                      {rec.card?.applyUrl && (
-                        <div className="flex justify-end">
-                          <Button 
-                            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 text-lg"
-                            onClick={() => window.open(rec.card!.applyUrl, '_blank')}
-                          >
-                            Apply Now
-                            <ExternalLink className="h-4 w-4 ml-2" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Spending Analysis */}
-          {analysis && analysis.categoryAnalysis && analysis.categoryAnalysis.length > 0 && (
-            <Card className="bg-white shadow-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-2xl">
-                  <PieChart className="h-6 w-6 text-blue-600" />
-                  Spending Breakdown
-                </CardTitle>
-                <CardDescription className="text-lg">
-                  Your spending organized by category
-                </CardDescription>
-              </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {analysis.categoryAnalysis.slice(0, 5).map((category, index) => (
-                    <div key={index} className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {recommendations.slice(0, 8).map((rec, index) => (
+                    <div key={rec.card?.id || index} className="border rounded-xl p-5 hover:shadow-sm transition-shadow grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      <CreditCardVisual title={rec.card?.name || `Card ${rec.rank}`} issuer={rec.card?.issuer} network={rec.card?.network} rank={rec.rank} />
                       <div>
-                        <p className="font-semibold text-lg text-gray-800">{category.category}</p>
-                        <p className="text-gray-600">
-                          {category.transactionCount} transactions • Total: {formatCurrency(Number(category.amount))}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-xl text-gray-800">{formatCurrency(Number(category.amount))}</p>
-                        <p className="text-sm text-gray-600">
-                          {category.percentage}% of total
-                        </p>
+                        <h3 className="text-lg font-semibold text-foreground">{rec.card?.name || `Card ${rec.rank}`}</h3>
+                        <p className="text-sm text-muted-foreground">{rec.card?.issuer} • {rec.card?.network}</p>
+                        {rec.card?.description && (
+                          <p className="text-sm text-muted-foreground mt-3 line-clamp-3">{rec.card.description}</p>
+                        )}
+                        <div className="grid grid-cols-2 gap-4 mt-4">
+                          <div className="border rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground">Annual Fee</p>
+                            <p className="font-medium">{rec.card?.annualFee ? formatCurrency(Number(rec.card.annualFee)) : 'N/A'}</p>
+                          </div>
+                          <div className="border rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground">Signup Bonus</p>
+                            <p className="font-medium">{rec.card?.signupBonus ? `${Number(rec.card.signupBonus).toLocaleString()} pts` : 'N/A'}</p>
+                          </div>
+                          <div className="border rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground">Score</p>
+                            <p className="font-medium">{rec.score}/100</p>
+                          </div>
+                          <div className="border rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground">Confidence</p>
+                            <p className="font-medium">{Number.isFinite(rec.confidenceScore) ? Math.round(rec.confidenceScore * 100) : 0}%</p>
+                          </div>
+                        </div>
+                        {rec.card?.applyUrl && (
+                          <div className="mt-5">
+                            <Button className="w-full" onClick={() => window.open(rec.card!.applyUrl, '_blank')}>
+                              Apply Now
+                              <ExternalLink className="h-4 w-4 ml-2" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -368,67 +292,61 @@ export function ResultsPage() {
             </Card>
           )}
 
-          {/* All Transactions */}
+            {/* All Transactions */}
           {transactions && transactions.length > 0 && (
-            <Card className="bg-white shadow-lg">
+            <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-2xl">
-                  <CreditCard className="h-6 w-6 text-purple-600" />
-                  All Transactions ({transactions.length})
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-6 w-6" />
+                  Transactions
                 </CardTitle>
-                <CardDescription className="text-lg">
-                  Complete list of your categorized transactions
+                <CardDescription>
+                  Page {currentPage} of {totalPages}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {transactions.map((transaction) => (
-                    <div key={transaction.id} className="flex items-center justify-between p-5 rounded-xl border-2 border-gray-100 bg-gradient-to-r from-white to-gray-50 hover:border-blue-200 hover:shadow-md transition-all duration-300">
+                    <div key={transaction.id} className="flex items-center justify-between p-4 rounded-lg border bg-card">
                       <div className="flex-1">
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="font-semibold text-lg text-gray-800">{transaction.description}</p>
-                          <p className={`font-bold text-xl ${Number(transaction.amount) >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        <div className="flex items-center justify-between">
+                          <p className="font-medium text-foreground">{transaction.description}</p>
+                          <p className={`font-semibold ${Number(transaction.amount) >= 0 ? 'text-red-600' : 'text-green-600'}`}>
                             {formatCurrency(Math.abs(Number(transaction.amount)))}
                           </p>
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600 flex-wrap">
+                        <div className="mt-1 flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                           <span className="flex items-center gap-1">
-                            <Calendar className="h-4 w-4" />
-                            {new Date(transaction.date).toLocaleDateString('en-IN', { 
-                              day: 'numeric', 
-                              month: 'short', 
-                              year: 'numeric' 
-                            })}
+                            <Calendar className="h-3.5 w-3.5" />
+                            {new Date(transaction.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </span>
                           {transaction.merchant && (
                             <span className="flex items-center gap-1">
-                              <Building2 className="h-4 w-4" />
+                              <Building2 className="h-3.5 w-3.5" />
                               {transaction.merchant}
                             </span>
                           )}
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            transaction.categoryName === 'Other' 
-                              ? 'bg-gray-100 text-gray-700' 
-                              : 'bg-blue-100 text-blue-700'
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                            transaction.categoryName === 'Other' ? 'bg-gray-100 text-gray-700' : 'bg-blue-100 text-blue-700'
                           }`}>
                             {transaction.categoryName || 'Uncategorized'}
                           </span>
                           {transaction.subCategoryName && (
-                            <span className="px-3 py-1 rounded-full text-xs bg-purple-100 text-purple-700 font-medium">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] bg-purple-100 text-purple-700 font-medium">
                               {transaction.subCategoryName}
                             </span>
                           )}
                           {transaction.mccCode && (
-                            <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded border">
+                            <span className="text-[10px] font-mono bg-gray-100 px-1.5 py-0.5 rounded border">
                               MCC: {transaction.mccCode}
                             </span>
                           )}
                           {transaction.confidence && (
-                            <span className={`text-xs px-3 py-1 rounded-full font-medium ${
-                              Number(transaction.confidence) >= 0.8 
-                                ? 'bg-green-100 text-green-700' 
-                                : Number(transaction.confidence) >= 0.6 
-                                ? 'bg-yellow-100 text-yellow-700' 
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                              Number(transaction.confidence) >= 0.8
+                                ? 'bg-green-100 text-green-700'
+                                : Number(transaction.confidence) >= 0.6
+                                ? 'bg-yellow-100 text-yellow-700'
                                 : 'bg-red-100 text-red-700'
                             }`}>
                               {Math.round(Number(transaction.confidence) * 100)}% confidence
@@ -439,9 +357,93 @@ export function ResultsPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Pagination Controls */}
+                <div className="mt-4 flex items-center justify-between">
+                  <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={currentPage <= 1}>
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">Page {currentPage} of {totalPages}</span>
+                  <Button variant="outline" size="sm" onClick={handleNextPage} disabled={currentPage >= (totalPages || 1)}>
+                    Next
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
+          </div>
+
+          {/* Sidebar column */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* KPI cards moved above chart on sidebar for better hierarchy on large screens */}
+            <div className="hidden lg:grid grid-cols-1 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total Spend</p>
+                      <p className="mt-1 text-xl font-semibold">{session.totalSpend ? formatCurrency(Number(session.totalSpend)) : 'N/A'}</p>
+                    </div>
+                    <DollarSign className="h-6 w-6 text-foreground/60" />
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Top Category</p>
+                      <p className="mt-1 font-semibold">{session.topCategory || 'N/A'}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="w-full">
+                      <p className="text-xs text-muted-foreground">Categorized</p>
+                      <Progress value={session.totalTransactions ? (session.categorizedCount || 0) / session.totalTransactions * 100 : 0} className="mt-2 h-2" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            {analysis && analysis.categoryAnalysis && analysis.categoryAnalysis.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <PieChart className="h-6 w-6" />
+                    Spending Breakdown
+                  </CardTitle>
+                  <CardDescription>
+                    Your spending organized by category
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-start gap-4">
+                    <div className="min-w-[140px] w-[45%] sm:w-[160px]">
+                      <DonutChart
+                      slices={analysis.categoryAnalysis.slice(0, 6).map((c, i) => ({
+                        label: c.category,
+                        value: Math.max(0, Math.min(100, c.percentage)),
+                        color: ['#2563eb', '#7c3aed', '#16a34a', '#f59e0b', '#ef4444', '#0ea5e9'][i % 6]
+                      }))}
+                      />
+                    </div>
+                    <div className="flex-1 space-y-2 min-w-0">
+                      {analysis.categoryAnalysis.slice(0, 6).map((category, index) => (
+                        <div key={index} className="flex items-center justify-between text-sm">
+                          <span className="truncate max-w-[55%]">{category.category}</span>
+                          <span className="text-muted-foreground">{category.percentage}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       </div>
     </div>
