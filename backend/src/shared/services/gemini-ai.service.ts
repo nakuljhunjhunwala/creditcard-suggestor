@@ -348,6 +348,12 @@ Rules:
 - Be conservative with confidence scores
 - Include warnings for any data quality issues
 
+IMPORTANT: If the statement contains tabular data with multiple numeric columns (like NeuCoins, reward points, or other values), make sure to extract ONLY the transaction amount in the "amount" field, NOT other numeric values like reward points, reference numbers, or loyalty program credits. Look for column headers or context to identify which column contains the actual transaction amount.
+
+For example, if you see data like:
+"07/06/2025 19:31:22    ZOMATO    NEW DELHI    7    463.30"
+Where there are multiple numbers (7 and 463.30), the larger monetary value (463.30) is likely the transaction amount, while smaller numbers (7) are likely reward points or similar.
+
 PDF Text:
 ${pdfText}
     `.trim();

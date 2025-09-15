@@ -165,12 +165,16 @@ export class PDFParserService {
     cleanTextForAI(text: string): string {
         return (
             text
-                // Normalize whitespace
-                .replace(/\s+/g, ' ')
+                // First, preserve tabular structure by replacing multiple spaces with tabs
+                .replace(/[ \t]{3,}/g, '\t')
+                // Clean up common PDF artifacts but preserve line breaks
+                .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
                 // Remove excessive blank lines
                 .replace(/\n\s*\n\s*\n/g, '\n\n')
-                // Clean up common PDF artifacts
-                .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+                // Normalize remaining whitespace (but not line breaks)
+                .replace(/[ \t]+/g, ' ')
+                // Restore tab separators for tabular data
+                .replace(/\t/g, '    ')
                 // Trim whitespace
                 .trim()
         );

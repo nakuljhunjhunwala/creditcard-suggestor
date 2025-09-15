@@ -2,6 +2,10 @@ import { prisma } from '@/database/db';
 import { logger } from '@/shared/utils/logger.util';
 import { ApiError } from '@/shared/utils/api-error.util';
 import { StatusCodes } from '@/shared/constants/http-status.constants';
+import {
+    savingsCalculatorService,
+    CardSavingsAnalysis
+} from './savings-calculator.service';
 
 /**
  * Credit Card Recommendation Service
@@ -84,7 +88,8 @@ export interface RecommendationStats {
 
 export class RecommendationService {
     private readonly MAX_RECOMMENDATIONS = 5;
-    private readonly MIN_SCORE_THRESHOLD = 30; // Temporarily lowered for debugging
+    private readonly MIN_SCORE_THRESHOLD = 10; // Much lower threshold to ensure recommendations
+    private readonly FALLBACK_RECOMMENDATIONS = 3; // Always show at least 3 cards
 
     // Point values (cents per point/mile)
     private readonly POINT_VALUES = {
@@ -116,11 +121,56 @@ export class RecommendationService {
             // Step 1: Analyze spending patterns
             const spendingPatterns = await this.analyzeSpendingPatterns(sessionId);
 
+            // Handle edge case of no positive spending patterns
             if (spendingPatterns.length === 0) {
-                throw new ApiError(
-                    'No spending data available for recommendations',
-                    StatusCodes.BAD_REQUEST,
-                );
+                logger.warn('No positive spending patterns found, generating fallback recommendations', { sessionId });
+
+                // Generate basic recommendations even without spending data
+                const eligibleCards = await this.getEligibleCards({
+                    totalSpending: 0,
+                    monthlySpending: 0,
+                    topCategories: [],
+                    creditScore: options.creditScore || 'good',
+                    preferredNetwork: options.preferredNetwork as "visa" | "mastercard" | "amex" | "discover" | undefined,
+                    maxAnnualFee: options.maxAnnualFee || 500,
+                    prioritizeSignupBonus: false,
+                    includeBusinessCards: options.includeBusinessCards || false,
+                });
+
+                const fallbackRecommendations = eligibleCards.slice(0, this.FALLBACK_RECOMMENDATIONS).map((card, index) => ({
+                    cardId: card.id,
+                    rank: index + 1,
+                    score: 30 - (index * 5), // Decreasing scores from 30
+                    potentialSavings: 0,
+                    currentEarnings: 0,
+                    yearlyEstimate: 0,
+                    primaryReason: 'Recommended for general spending and building credit history',
+                    pros: this.getGeneralCardPros(card),
+                    cons: this.getGeneralCardCons(card),
+                    benefitBreakdown: [],
+                    confidenceScore: 0.6,
+                    signupBonusValue: Number(card.signupBonus || 0),
+                    feeBreakeven: card.annualFee > 0 ? 12 : undefined,
+                }));
+
+                await this.storeRecommendations(sessionId, fallbackRecommendations);
+
+                const processingTime = Date.now() - startTime;
+                return {
+                    sessionId,
+                    recommendations: fallbackRecommendations,
+                    criteria: {
+                        totalSpending: 0,
+                        monthlySpending: 0,
+                        topCategories: [],
+                        creditScore: options.creditScore || 'good',
+                        preferredNetwork: options.preferredNetwork as "visa" | "mastercard" | "amex" | "discover" | undefined,
+                        maxAnnualFee: options.maxAnnualFee || 500,
+                        prioritizeSignupBonus: false,
+                        includeBusinessCards: options.includeBusinessCards || false,
+                    },
+                    processingTimeMs: processingTime,
+                };
             }
 
             // Step 2: Calculate recommendation criteria
@@ -132,17 +182,35 @@ export class RecommendationService {
             // Step 3: Get eligible credit cards
             const eligibleCards = await this.getEligibleCards(criteria);
 
-            // Step 4: Score and rank cards
-            const scoredCards = await this.scoreAndRankCards(
+            // Step 4: Score and rank cards using enhanced savings-based logic
+            const scoredCards = await this.scoreAndRankCardsRobust(
                 eligibleCards,
                 criteria,
                 spendingPatterns,
             );
 
-            // Step 5: Filter top recommendations
-            const topRecommendations = scoredCards
+            // Step 5: Get top recommendations with fallback logic
+            let topRecommendations = scoredCards
                 .filter((card) => card.score >= this.MIN_SCORE_THRESHOLD)
                 .slice(0, this.MAX_RECOMMENDATIONS);
+
+            // FALLBACK LOGIC: Always ensure user gets recommendations
+            if (topRecommendations.length === 0) {
+                logger.warn('No cards met threshold, applying fallback logic', {
+                    sessionId,
+                    totalCards: scoredCards.length,
+                    threshold: this.MIN_SCORE_THRESHOLD
+                });
+
+                // Take top cards regardless of score, but boost their scores
+                topRecommendations = scoredCards
+                    .slice(0, this.FALLBACK_RECOMMENDATIONS)
+                    .map(card => ({
+                        ...card,
+                        score: Math.max(card.score, this.MIN_SCORE_THRESHOLD),
+                        primaryReason: `Best available option for your spending profile - ${card.primaryReason}`
+                    }));
+            }
 
             // Step 6: Store recommendations
             await this.storeRecommendations(sessionId, topRecommendations);
@@ -393,7 +461,19 @@ export class RecommendationService {
             }
         >();
 
-        transactions.forEach((t) => {
+        // Separate positive and negative transactions for better analysis
+        const positiveTransactions = transactions.filter(t => Number(t.amount) > 0);
+        const negativeTransactions = transactions.filter(t => Number(t.amount) < 0);
+
+        logger.info('Transaction analysis', {
+            total: transactions.length,
+            positive: positiveTransactions.length,
+            negative: negativeTransactions.length,
+            sessionId
+        });
+
+        // Process only positive transactions for spending pattern analysis
+        positiveTransactions.forEach((t) => {
             const category = t.categoryName || 'Other';
             if (!categoryMap.has(category)) {
                 categoryMap.set(category, {
@@ -523,32 +603,75 @@ export class RecommendationService {
     }
 
     /**
-     * Score and rank credit cards
+     * Enhanced robust scoring and ranking using savings calculator
      */
-    private async scoreAndRankCards(
+    private async scoreAndRankCardsRobust(
         cards: any[],
         criteria: RecommendationCriteria,
         patterns: SpendingPattern[],
     ): Promise<CardRecommendation[]> {
         const recommendations: CardRecommendation[] = [];
 
-        for (let i = 0; i < cards.length; i++) {
-            const card = cards[i];
-            const recommendation = await this.scoreCard(card, criteria, patterns);
+        // Handle edge case: no positive spending
+        if (patterns.length === 0 || patterns.every(p => p.totalSpent <= 0)) {
+            logger.warn('No positive spending patterns found, using fallback logic');
+
+            // Return basic recommendations based on card features
+            return cards.slice(0, this.MAX_RECOMMENDATIONS).map((card, index) => ({
+                cardId: card.id,
+                rank: index + 1,
+                score: 25 + (index * 5), // Decreasing scores starting from 25
+                potentialSavings: 0,
+                currentEarnings: 0,
+                yearlyEstimate: 0,
+                primaryReason: 'Recommended for general use',
+                pros: this.getGeneralCardPros(card),
+                cons: this.getGeneralCardCons(card),
+                benefitBreakdown: [],
+                confidenceScore: 0.5,
+                signupBonusValue: Number(card.signupBonus || 0),
+                feeBreakeven: card.annualFee > 0 ? 12 : undefined,
+            }));
+        }
+
+        // Use savings calculator for comprehensive analysis
+        const savingsAnalyses = savingsCalculatorService.compareCards(cards, patterns);
+
+        for (const savings of savingsAnalyses) {
+            const card = cards.find(c => c.id === savings.cardId);
+            if (!card) continue;
+
+            const recommendation = this.buildRecommendationFromSavings(
+                card,
+                savings,
+                criteria,
+                patterns
+            );
 
             if (recommendation) {
-                recommendation.rank = i + 1;
                 recommendations.push(recommendation);
             }
         }
 
-        // Sort by score (descending)
+        // Sort by score (descending) and assign ranks
         return recommendations
             .sort((a, b) => b.score - a.score)
             .map((rec, index) => ({
                 ...rec,
                 rank: index + 1,
             }));
+    }
+
+    /**
+     * Score and rank credit cards (legacy method kept for compatibility)
+     */
+    private async scoreAndRankCards(
+        cards: any[],
+        criteria: RecommendationCriteria,
+        patterns: SpendingPattern[],
+    ): Promise<CardRecommendation[]> {
+        // Delegate to robust method
+        return this.scoreAndRankCardsRobust(cards, criteria, patterns);
     }
 
     /**
@@ -714,6 +837,286 @@ export class RecommendationService {
         }
 
         return bestBenefit;
+    }
+
+    /**
+     * Build recommendation from savings analysis
+     */
+    private buildRecommendationFromSavings(
+        card: any,
+        savings: CardSavingsAnalysis,
+        criteria: RecommendationCriteria,
+        patterns: SpendingPattern[]
+    ): CardRecommendation | null {
+        try {
+            // Calculate score based on savings potential
+            let score = 50; // Base score
+
+            // Primary scoring based on first-year value
+            if (savings.totalFirstYearValue > 0) {
+                score += Math.min(40, savings.totalFirstYearValue / 10); // Up to 40 points
+            } else if (savings.totalFirstYearValue < 0) {
+                score -= Math.abs(savings.totalFirstYearValue) / 20; // Penalty for negative value
+            }
+
+            // ROI bonus (up to 20 points)
+            if (savings.yearlyROI > 0) {
+                score += Math.min(20, savings.yearlyROI / 10);
+            }
+
+            // Category match bonus
+            const categoryMatchBonus = this.calculateCategoryMatchBonus(card, patterns);
+            score += categoryMatchBonus;
+
+            // Special handling for "Other" category dominance
+            const otherCategoryPenalty = this.calculateOtherCategoryHandling(patterns);
+            score -= otherCategoryPenalty;
+
+            // Network and tier bonuses
+            if (card.network === criteria.preferredNetwork) {
+                score += 5;
+            }
+            if (card.tier === 'premium') {
+                score += 10;
+            }
+
+            // Generate pros and cons
+            const pros = this.generatePros(card, savings, patterns);
+            const cons = this.generateCons(card, savings);
+
+            // Determine primary reason based on best savings category
+            const primaryReason = this.generatePrimaryReason(card, savings, patterns);
+
+            // Ensure minimum score for valid recommendations
+            score = Math.max(score, 5); // Always at least 5 points
+
+            return {
+                cardId: card.id,
+                rank: 0, // Will be set later
+                score: Math.min(100, Math.max(0, score)),
+                potentialSavings: savings.netSavings,
+                currentEarnings: savings.totalCurrentEarnings,
+                yearlyEstimate: savings.totalPotentialEarnings,
+                signupBonusValue: savings.signupBonusValue,
+                feeBreakeven: savings.monthsToBreakeven || undefined,
+                primaryReason,
+                pros,
+                cons,
+                benefitBreakdown: this.convertSavingsToBreakdown(savings),
+                confidenceScore: Math.min(1.0, score / 100),
+            };
+        } catch (error) {
+            logger.error('Error building recommendation from savings', {
+                cardId: card.id,
+                error
+            });
+            return null;
+        }
+    }
+
+    /**
+     * Calculate category match bonus for scoring
+     */
+    private calculateCategoryMatchBonus(card: any, patterns: SpendingPattern[]): number {
+        let bonus = 0;
+        const benefits = card.benefits || [];
+
+        for (const pattern of patterns) {
+            const matchingBenefit = this.findBestBenefit(benefits, pattern);
+            if (matchingBenefit) {
+                const earnRate = Number(matchingBenefit.earnRate || 1);
+                if (earnRate >= 5) bonus += 10;
+                else if (earnRate >= 3) bonus += 7;
+                else if (earnRate >= 2) bonus += 5;
+            }
+        }
+
+        return Math.min(bonus, 25); // Cap at 25 points
+    }
+
+    /**
+     * Handle "Other" category dominance with fallback logic
+     */
+    private calculateOtherCategoryHandling(patterns: SpendingPattern[]): number {
+        const otherCategory = patterns.find(p => p.categoryName === 'Other');
+        if (!otherCategory) return 0;
+
+        const otherPercentage = otherCategory.percentage;
+
+        // If "Other" dominates (>50%), slightly penalize but don't exclude
+        if (otherPercentage > 50) {
+            return 5; // Small penalty for uncertainty
+        }
+
+        return 0;
+    }
+
+    /**
+     * Generate pros based on card features and savings
+     */
+    private generatePros(card: any, savings: CardSavingsAnalysis, patterns: SpendingPattern[]): string[] {
+        const pros: string[] = [];
+
+        // Savings-based pros
+        if (savings.netSavings > 0) {
+            pros.push(`Save $${savings.netSavings.toFixed(2)} annually based on your spending`);
+        }
+
+        if (savings.signupBonusValue > 0) {
+            pros.push(`Signup bonus worth $${savings.signupBonusValue.toFixed(2)}`);
+        }
+
+        if (savings.totalFirstYearValue > 100) {
+            pros.push(`Excellent first-year value: $${savings.totalFirstYearValue.toFixed(2)}`);
+        }
+
+        // Annual fee handling
+        if (card.annualFee === 0) {
+            pros.push('No annual fee');
+        } else if (savings.monthsToBreakeven && savings.monthsToBreakeven <= 12) {
+            pros.push(`Annual fee pays for itself in ${Math.ceil(savings.monthsToBreakeven)} months`);
+        }
+
+        // Category-specific pros
+        const topCategory = patterns[0];
+        if (topCategory && savings.categoryBreakdown.length > 0) {
+            const topCategoryBreakdown = savings.categoryBreakdown.find(
+                c => c.categoryName === topCategory.categoryName
+            );
+            if (topCategoryBreakdown && topCategoryBreakdown.cardEarnRate >= 2) {
+                pros.push(`${topCategoryBreakdown.cardEarnRate}% rewards on ${topCategory.categoryName}`);
+            }
+        }
+
+        // Card features
+        if (card.tier === 'premium') {
+            pros.push('Premium card benefits and perks');
+        }
+
+        // Ensure at least one pro
+        if (pros.length === 0) {
+            pros.push('Solid rewards earning potential');
+        }
+
+        return pros;
+    }
+
+    /**
+     * Generate cons based on card features and savings
+     */
+    private generateCons(card: any, savings: CardSavingsAnalysis): string[] {
+        const cons: string[] = [];
+
+        // Annual fee concerns
+        if (card.annualFee > 0) {
+            if (!savings.monthsToBreakeven || savings.monthsToBreakeven > 24) {
+                cons.push(`High annual fee of $${card.annualFee}`);
+            } else if (savings.monthsToBreakeven > 12) {
+                cons.push(`Takes ${Math.ceil(savings.monthsToBreakeven)} months to break even on annual fee`);
+            }
+        }
+
+        // Low savings warning
+        if (savings.netSavings < 0) {
+            cons.push('May not provide significant savings based on current spending');
+        }
+
+        // Credit requirements
+        if (card.creditRequirement === 'excellent') {
+            cons.push('Requires excellent credit (750+ FICO)');
+        }
+
+        return cons;
+    }
+
+    /**
+     * Generate primary reason for recommendation
+     */
+    private generatePrimaryReason(
+        card: any,
+        savings: CardSavingsAnalysis,
+        patterns: SpendingPattern[]
+    ): string {
+        // Best savings category
+        const bestSavingsCategory = savings.categoryBreakdown
+            .filter(c => c.savings > 0)
+            .sort((a, b) => b.savings - a.savings)[0];
+
+        if (bestSavingsCategory && bestSavingsCategory.cardEarnRate >= 2) {
+            return `Excellent ${bestSavingsCategory.categoryName} rewards (${bestSavingsCategory.cardEarnRate}% earning rate)`;
+        }
+
+        // First-year value
+        if (savings.totalFirstYearValue > 200) {
+            return `Outstanding first-year value of $${savings.totalFirstYearValue.toFixed(2)}`;
+        }
+
+        // General earning potential
+        if (savings.netSavings > 50) {
+            return `Strong earning potential with $${savings.netSavings.toFixed(2)} annual savings`;
+        }
+
+        // Fallback reasons
+        if (card.annualFee === 0) {
+            return 'No annual fee with solid rewards earning';
+        }
+
+        return 'Good overall rewards earning for your spending profile';
+    }
+
+    /**
+     * Convert savings analysis to benefit breakdown format
+     */
+    private convertSavingsToBreakdown(savings: CardSavingsAnalysis): any[] {
+        return savings.categoryBreakdown.map(category => ({
+            category: category.categoryName,
+            currentRate: category.currentEarnRate,
+            cardRate: category.cardEarnRate,
+            spentAmount: category.spentAmount,
+            earnedPoints: category.cardEarnings,
+            dollarValue: category.cardEarnings,
+            savingsAmount: category.savings,
+        }));
+    }
+
+    /**
+     * Get general pros for fallback scenarios
+     */
+    private getGeneralCardPros(card: any): string[] {
+        const pros: string[] = [];
+
+        if (card.annualFee === 0) {
+            pros.push('No annual fee');
+        }
+
+        if (card.signupBonus > 0) {
+            pros.push(`Signup bonus available`);
+        }
+
+        if (card.tier === 'premium') {
+            pros.push('Premium card benefits');
+        } else {
+            pros.push('Simple and straightforward rewards');
+        }
+
+        return pros;
+    }
+
+    /**
+     * Get general cons for fallback scenarios
+     */
+    private getGeneralCardCons(card: any): string[] {
+        const cons: string[] = [];
+
+        if (card.annualFee > 100) {
+            cons.push(`Annual fee of $${card.annualFee}`);
+        }
+
+        if (card.creditRequirement === 'excellent') {
+            cons.push('Requires excellent credit');
+        }
+
+        return cons;
     }
 
     /**
