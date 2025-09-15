@@ -9,11 +9,23 @@ export default {
   theme: {
     extend: {
       colors: {
+        background: "#ffffff",
+        foreground: "#0f172a",
         primary: {
-          50: '#eff6ff',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
+          DEFAULT: "#1e40af",
+          foreground: "#ffffff",
+        },
+        muted: {
+          DEFAULT: "#f1f5f9",
+          foreground: "#64748b",
+        },
+        card: {
+          DEFAULT: "#ffffff",
+          foreground: "#0f172a",
+        },
+        destructive: {
+          DEFAULT: "#dc2626",
+          foreground: "#ffffff",
         },
       },
     },
