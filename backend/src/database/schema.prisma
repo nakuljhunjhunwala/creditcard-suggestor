@@ -1,0 +1,347 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== BACKGROUND PROCESSING ====================
+
+model ProcessingJob {
+  id              String   @id @default(cuid())
+  sessionId       String   // Reference to sessions.id
+  
+  // Job Details
+  jobType         String   // pdf_extraction, mcc_discovery, recommendation_generation
+  status          String   @default("queued") // queued, processing, completed, failed, retrying
+  priority        Int      @default(1) // 1=high, 2=medium, 3=low
+  
+  // Progress Tracking
+  progress        Int      @default(0) // 0-100
+  currentStep     String?  // current processing step description
+  estimatedTime   Int?     // estimated completion time in seconds
+  
+  // Job Data
+  inputData       Json?    // job-specific input parameters
+  outputData      Json?    // job results
+  errorMessage    String?
+  errorStack      String?
+  
+  // Retry Logic
+  retryCount      Int      @default(0)
+  maxRetries      Int      @default(3)
+  retryAfter      DateTime?
+  
+  // Timing
+  queuedAt        DateTime @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([sessionId])
+  @@index([status])
+  @@index([jobType])
+  @@index([priority])
+  @@index([queuedAt])
+  @@map("processing_jobs")
+}
+
+// ==================== CORE MODELS ====================
+
+model Session {
+  id            String   @id @default(cuid())
+  sessionToken  String   @unique @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  expiresAt     DateTime
+  
+  // Processing Status
+  status        String   @default("uploading") // uploading, extracting, categorizing, mcc_discovery, analyzing, completed, failed
+  progress      Int      @default(0) // 0-100
+  
+  // Analysis results
+  totalSpend    Decimal? @db.Decimal(10,2)
+  topCategory   String?  // Reference to categories.slug
+  
+  // Processing Stats
+  totalTransactions     Int?
+  categorizedCount      Int?
+  unknownMccCount       Int?
+  newMccDiscovered      Int?
+  
+  // File handling
+  filePath      String?  // Path to uploaded PDF file
+  fileName      String?  // Original filename
+  fileSize      Int?     // File size in bytes
+  
+  // Error handling
+  errorMessage  String?
+  retryCount    Int      @default(0)
+  
+  @@map("sessions")
+}
+
+model CreditCard {
+  id              String   @id @default(cuid())
+  name            String
+  issuer          String   // Chase, Amex, Citi, etc.
+  network         String   // Visa, Mastercard, Amex, Discover
+  
+  // Card Details
+  annualFee       Decimal  @db.Decimal(8,2)
+  signupBonus     Decimal? @db.Decimal(10,2)
+  signupSpendReq  Decimal? @db.Decimal(10,2)
+  signupTimeReq   Int?     // months
+  
+  // Basic Rates
+  defaultCashback Decimal  @db.Decimal(4,3) // 0.015 = 1.5%
+  defaultPoints   Decimal  @db.Decimal(4,3)
+  
+  // Status & Metadata
+  isActive        Boolean  @default(true)
+  tier           String   // premium, standard, basic
+  creditRequirement String // excellent, good, fair
+  
+  // Additional Info
+  description     String?
+  imageUrl        String?
+  applyUrl        String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([issuer])
+  @@index([isActive])
+  @@index([tier])
+  @@map("credit_cards")
+}
+
+model CardBenefit {
+  id            String   @id @default(cuid())
+  cardId        String   // Reference to credit_cards.id
+  
+  // Benefit Details
+  benefitType   String   // cashback, points, miles, statement_credit
+  categoryId    String?  // Reference to categories.id - null for general benefits
+  subCategoryId String?  // Reference to sub_categories.id
+  mccCodes      String[] // Array of MCC codes this benefit applies to
+  
+  // Rates & Limits
+  rate          Decimal  @db.Decimal(4,3) // 0.05 = 5%
+  maxSpend      Decimal? @db.Decimal(10,2) // spending cap
+  maxEarning    Decimal? @db.Decimal(10,2) // earning cap
+  
+  // Time Constraints
+  isRotating    Boolean  @default(false)
+  validFrom     DateTime?
+  validTo       DateTime?
+  quarterActive Int[]    // [1,2,3,4] for rotating quarters
+  
+  // Conditions
+  minSpend      Decimal? @db.Decimal(8,2)
+  multiplier    Decimal? @db.Decimal(3,2) // 2.5x points
+  
+  // Description
+  title         String
+  description   String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([cardId])
+  @@index([categoryId])
+  @@index([benefitType])
+  @@map("card_benefits")
+}
+
+// ==================== CATEGORY SYSTEM ====================
+
+model Category {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  slug         String   @unique
+  description  String?
+  iconName     String?  // for UI icons
+  color        String?  // hex color for UI
+  sortOrder    Int      @default(0)
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@index([slug])
+  @@map("categories")
+}
+
+model SubCategory {
+  id           String   @id @default(cuid())
+  categoryId   String   // Reference to categories.id
+  name         String
+  slug         String
+  description  String?
+  sortOrder    Int      @default(0)
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@unique([categoryId, slug])
+  @@index([categoryId])
+  @@map("sub_categories")
+}
+
+model MCCCode {
+  id            String   @id @default(cuid())
+  code          String   @unique // "5411"
+  categoryId    String   // Reference to categories.id
+  subCategoryId String?  // Reference to sub_categories.id
+  
+  // MCC Details
+  description   String   // "Grocery Stores, Supermarkets"
+  isActive      Boolean  @default(true)
+  
+  // Discovery Tracking
+  discoveryMethod String @default("manual") // manual, ai_discovered, user_feedback
+  confidence    Decimal? @db.Decimal(3,2) // AI confidence when discovered
+  discoveredBy  String?  // session_id or "initial_seed"
+  verifiedCount Int      @default(0) // how many times this MCC was confirmed
+  
+  // Additional Classification
+  tags          String[] // ["grocery", "essential", "food"]
+  riskLevel     String   @default("low") // high, medium, low
+  
+  // Merchant patterns for fuzzy matching
+  merchantPatterns String[] // ["walmart", "target", "kroger"] for grocery
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([code])
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([discoveryMethod])
+  @@map("mcc_codes")
+}
+
+// ==================== TRANSACTION SYSTEM ====================
+
+model Transaction {
+  id              String   @id @default(cuid())
+  sessionId       String   // Reference to sessions.id
+  
+  // Transaction Details
+  date            DateTime
+  description     String
+  merchant        String?
+  amount          Decimal  @db.Decimal(10,2)
+  type            String   @default("debit") // debit, credit, payment
+  
+  // Categorization Status
+  mccCode         String?  // Reference to mcc_codes.code
+  categoryId      String?  // Reference to categories.id
+  subCategoryId   String?  // Reference to sub_categories.id
+  categoryName    String?  // fallback category name
+  subCategoryName String?  // fallback subcategory
+  
+  // MCC Discovery Tracking
+  mccStatus       String   @default("pending") // pending, found_fuzzy, found_ai, not_found, manual_override
+  mccConfidence   Decimal? @db.Decimal(3,2) // confidence in MCC assignment
+  aiSearchQuery   String?  // what was searched to find MCC
+  aiSearchResult  Json?    // full AI response for MCC discovery
+  
+  // Additional Data
+  rawDescription  String?  // original from statement
+  confidence      Decimal? @db.Decimal(3,2) // AI confidence 0.95
+  isVerified      Boolean  @default(false)
+  needsReview     Boolean  @default(false) // flagged for manual review
+  
+  // Metadata
+  originalIndex   Int?     // order in PDF
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([sessionId])
+  @@index([mccCode])
+  @@index([categoryId])
+  @@index([date])
+  @@index([mccStatus])
+  @@map("transactions")
+}
+
+// ==================== RECOMMENDATION SYSTEM ====================
+
+model Recommendation {
+  id                String   @id @default(cuid())
+  sessionId         String   // Reference to sessions.id
+  cardId            String   // Reference to credit_cards.id
+  
+  // Recommendation Score
+  score             Decimal  @db.Decimal(5,2) // 0-100
+  rank              Int      // 1, 2, 3...
+  
+  // Savings Analysis
+  potentialSavings  Decimal  @db.Decimal(10,2)
+  currentEarnings   Decimal  @db.Decimal(10,2)
+  yearlyEstimate    Decimal  @db.Decimal(10,2)
+  
+  // Benefit Breakdown
+  benefitBreakdown  Json     // detailed per-category analysis
+  
+  // Reasoning
+  primaryReason     String   // "5x on dining matches your spending"
+  pros              String[] // Array of pros
+  cons              String[] // Array of cons
+  
+  // Conditions
+  signupBonusValue  Decimal? @db.Decimal(10,2)
+  feeBreakeven      Int?     // months to break even
+  
+  createdAt         DateTime @default(now())
+  
+  @@index([sessionId])
+  @@index([cardId])
+  @@index([score])
+  @@map("recommendations")
+}
+
+// ==================== UTILITY MODELS ====================
+
+model AppConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("app_config")
+}
+
+// ==================== LOOKUP/HELPER MODELS ====================
+
+model MerchantAlias {
+  id              String   @id @default(cuid())
+  merchantName    String   // normalized merchant name
+  aliases         String[] // ["McDonald's", "McDonalds", "MCD", "MCDONALD'S #12345"]
+  mccCode         String   // Reference to mcc_codes.code
+  confidence      Decimal  @db.Decimal(3,2) // confidence in this mapping
+  
+  // Tracking
+  usageCount      Int      @default(0) // how many times this alias was used
+  lastUsed        DateTime?
+  createdBy       String?  // session_id that created this alias
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([merchantName])
+  @@index([mccCode])
+  @@map("merchant_aliases")
+}
