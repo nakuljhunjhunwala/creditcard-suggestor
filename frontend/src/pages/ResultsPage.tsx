@@ -166,9 +166,12 @@ function RecommendationCard({ recommendation: rec, index, formatCurrency }: Reco
             </p>
           </div>
           <div className="bg-gray-50 p-3 rounded-lg text-center">
-            <p className="text-xs text-gray-500 mb-1">Potential Savings</p>
+            <p className="text-xs text-gray-500 mb-1">Annual Savings</p>
             <p className="font-semibold text-green-600">
-              {rec.potentialSavings ? formatCurrency(rec.potentialSavings) : 'TBD'}
+              {(rec.annualSavings || rec.potentialSavings) ? formatCurrency(rec.annualSavings || rec.potentialSavings) : 'TBD'}
+            </p>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Statement: {formatCurrency(rec.statementSavings || 0)}
             </p>
           </div>
           <div className="bg-gray-50 p-3 rounded-lg text-center">

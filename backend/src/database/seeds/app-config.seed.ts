@@ -234,6 +234,50 @@ const APP_CONFIG = [
     description:
       'Enable debug-level logging for development and troubleshooting',
   },
+
+  // Recommendation Bonus/Penalty Configuration
+  {
+    id: 'conf_bonus_lifetime_free',
+    key: 'BONUS_LIFETIME_FREE',
+    value: '10',
+    description: 'Bonus points for lifetime free credit cards',
+  },
+  {
+    id: 'conf_bonus_high_customer_satisfaction',
+    key: 'BONUS_HIGH_CUSTOMER_SATISFACTION',
+    value: '5',
+    description: 'Bonus points for cards with customer satisfaction >= 4.5',
+  },
+  {
+    id: 'conf_bonus_medium_customer_satisfaction',
+    key: 'BONUS_MEDIUM_CUSTOMER_SATISFACTION',
+    value: '3',
+    description: 'Bonus points for cards with customer satisfaction >= 4.0',
+  },
+  {
+    id: 'conf_penalty_limited_acceptance',
+    key: 'PENALTY_LIMITED_ACCEPTANCE',
+    value: '5',
+    description: 'Penalty points for cards with limited network acceptance (Amex, Diners)',
+  },
+  {
+    id: 'conf_penalty_inactive_card',
+    key: 'PENALTY_INACTIVE_CARD',
+    value: '15',
+    description: 'Penalty points for inactive credit cards',
+  },
+  {
+    id: 'conf_penalty_low_customer_satisfaction',
+    key: 'PENALTY_LOW_CUSTOMER_SATISFACTION',
+    value: '8',
+    description: 'Penalty points for cards with customer satisfaction < 3.5',
+  },
+  {
+    id: 'conf_penalty_low_recommendation_score',
+    key: 'PENALTY_LOW_RECOMMENDATION_SCORE',
+    value: '5',
+    description: 'Penalty points for cards with recommendation score < 70',
+  },
 ] as const;
 
 /**

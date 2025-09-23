@@ -8,10 +8,19 @@ type Slice = {
 };
 
 type DonutChartProps = {
-  slices: Slice[];
+  slices?: Slice[];
 };
 
 export function DonutChart({ slices }: DonutChartProps) {
+  // Handle undefined or empty slices
+  if (!slices || slices.length === 0) {
+    return (
+      <div className="w-full flex items-center justify-center" style={{ minWidth: 140, height: 160 }}>
+        <p className="text-gray-500 text-sm">No data available</p>
+      </div>
+    );
+  }
+
   const data = slices.map(s => ({ name: s.label, value: Math.max(0, s.value) }));
   const COLORS = slices.map(s => s.color);
 

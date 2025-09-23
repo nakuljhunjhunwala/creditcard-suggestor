@@ -88,80 +88,183 @@ model Session {
   @@map("sessions")
 }
 
-model CreditCard {
-  id              String   @id @default(cuid())
-  name            String
-  issuer          String   // Chase, Amex, Citi, etc.
-  network         String   // Visa, Mastercard, Amex, Discover
+// ==================== INDIAN CREDIT CARDS SYSTEM ====================
+
+model CardCategory {
+  id          String @id
+  name        String
+  slug        String @unique
+  description String?
+  iconName    String?
+  color       String?
+  sortOrder   Int    @default(0)
   
-  // Card Details
-  annualFee       Decimal  @db.Decimal(8,2)
-  signupBonus     Decimal? @db.Decimal(10,2)
-  signupSpendReq  Decimal? @db.Decimal(10,2)
-  signupTimeReq   Int?     // months
+  // Relations
+  subCategories CardSubCategory[]
+  creditCards   CreditCard[]
   
-  // Basic Rates
-  defaultCashback Decimal  @db.Decimal(4,3) // 0.015 = 1.5%
-  defaultPoints   Decimal  @db.Decimal(4,3)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   
-  // Status & Metadata
-  isActive        Boolean  @default(true)
-  tier           String   // premium, standard, basic
-  creditRequirement String // excellent, good, fair
+  @@index([slug])
+  @@map("card_categories")
+}
+
+model CardSubCategory {
+  id          String @id
+  categoryId  String
+  name        String
+  slug        String
+  description String?
+  sortOrder   Int    @default(0)
   
-  // Additional Info
-  description     String?
-  imageUrl        String?
-  applyUrl        String?
+  // Relations
+  category    CardCategory @relation(fields: [categoryId], references: [id])
+  creditCards CreditCard[]
   
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   
-  @@index([issuer])
+  @@unique([categoryId, slug])
+  @@index([categoryId])
+  @@map("card_sub_categories")
+}
+
+model CardNetwork {
+  id          String  @id
+  name        String
+  slug        String  @unique
+  description String?
+  iconName    String?
+  color       String?
+  isActive    Boolean @default(true)
+  
+  // Relations
+  creditCards CreditCard[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([slug])
   @@index([isActive])
-  @@index([tier])
+  @@map("card_networks")
+}
+
+model CardIssuer {
+  id          String  @id
+  name        String
+  slug        String  @unique
+  description String?
+  iconName    String?
+  color       String?
+  isActive    Boolean @default(true)
+  marketShare Decimal? @db.Decimal(5,2)
+  
+  // Relations
+  creditCards CreditCard[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([slug])
+  @@index([isActive])
+  @@map("card_issuers")
+}
+
+model RewardCategory {
+  id          String   @id
+  name        String
+  slug        String   @unique
+  description String?
+  mccCodes    String[] // Array of MCC codes
+  sortOrder   Int      @default(0)
+  
+  // Relations
+  rewardRules AcceleratedReward[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([slug])
+  @@map("reward_categories")
+}
+
+model CreditCard {
+  id              String  @id
+  name            String
+  slug            String  @unique
+  issuerId        String
+  networkId       String
+  categoryId      String
+  subCategoryId   String?
+  description     String?
+  iconName        String?
+  color           String?
+  isActive        Boolean @default(true)
+  isLifetimeFree  Boolean @default(false)
+  launchDate      DateTime?
+  lastUpdated     DateTime?
+  
+  // Relations
+  issuer          CardIssuer      @relation(fields: [issuerId], references: [id])
+  network         CardNetwork     @relation(fields: [networkId], references: [id])
+  category        CardCategory    @relation(fields: [categoryId], references: [id])
+  subCategory     CardSubCategory? @relation(fields: [subCategoryId], references: [id])
+  
+  // Embedded structures (stored as JSON)
+  feeStructure            Json // FeeStructure object
+  eligibilityRequirements Json // EligibilityRequirements object
+  rewardStructure         Json // RewardStructure object
+  additionalBenefits      Json // AdditionalBenefits array
+  
+  // Features and metrics
+  uniqueFeatures          String[] // Array of unique feature strings
+  popularityScore         Int      @default(0)
+  customerSatisfactionScore Decimal @db.Decimal(2,1) // e.g., 4.5
+  recommendationScore     Int      @default(0)
+  
+  // Relations
+  acceleratedRewards      AcceleratedReward[]
+  recommendations         Recommendation[]
+  
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  
+  @@index([slug])
+  @@index([issuerId])
+  @@index([networkId])
+  @@index([categoryId])
+  @@index([subCategoryId])
+  @@index([isActive])
+  @@index([isLifetimeFree])
+  @@index([popularityScore])
   @@map("credit_cards")
 }
 
-model CardBenefit {
-  id            String   @id @default(cuid())
-  cardId        String   // Reference to credit_cards.id
+model AcceleratedReward {
+  id                String @id @default(cuid())
+  cardId            String
+  rewardCategoryId  String?
+  merchantPatterns  String[] // Array of merchant patterns
+  rewardRate        Decimal  @db.Decimal(5,2) // Percentage rate
+  conditions        String[] // Array of conditions
+  cappingLimit      Decimal? @db.Decimal(10,2)
+  cappingPeriod     String?  // monthly, quarterly, yearly
+  description       String
   
-  // Benefit Details
-  benefitType   String   // cashback, points, miles, statement_credit
-  categoryId    String?  // Reference to categories.id - null for general benefits
-  subCategoryId String?  // Reference to sub_categories.id
-  mccCodes      String[] // Array of MCC codes this benefit applies to
+  // Relations
+  card             CreditCard     @relation(fields: [cardId], references: [id])
+  rewardCategory   RewardCategory? @relation(fields: [rewardCategoryId], references: [id])
   
-  // Rates & Limits
-  rate          Decimal  @db.Decimal(4,3) // 0.05 = 5%
-  maxSpend      Decimal? @db.Decimal(10,2) // spending cap
-  maxEarning    Decimal? @db.Decimal(10,2) // earning cap
-  
-  // Time Constraints
-  isRotating    Boolean  @default(false)
-  validFrom     DateTime?
-  validTo       DateTime?
-  quarterActive Int[]    // [1,2,3,4] for rotating quarters
-  
-  // Conditions
-  minSpend      Decimal? @db.Decimal(8,2)
-  multiplier    Decimal? @db.Decimal(3,2) // 2.5x points
-  
-  // Description
-  title         String
-  description   String?
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
   
   @@index([cardId])
-  @@index([categoryId])
-  @@index([benefitType])
-  @@map("card_benefits")
+  @@index([rewardCategoryId])
+  @@map("accelerated_rewards")
 }
 
-// ==================== CATEGORY SYSTEM ====================
+// ==================== EXISTING CATEGORY SYSTEM ====================
 
 model Category {
   id           String   @id @default(cuid())
@@ -301,6 +404,9 @@ model Recommendation {
   // Conditions
   signupBonusValue  Decimal? @db.Decimal(10,2)
   feeBreakeven      Int?     // months to break even
+  
+  // Relations
+  card              CreditCard @relation(fields: [cardId], references: [id])
   
   createdAt         DateTime @default(now())
   

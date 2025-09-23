@@ -10,6 +10,7 @@ import fs from 'fs/promises';
 // import path from 'path';
 import { backgroundJobsService } from '@/shared/services/background-jobs.service';
 import { fileValidationService } from '@/shared/services/file-validation.service';
+import { recommendationService } from '@/shared/services/recommendation.service';
 
 export class SessionController {
     private sessionService: SessionService;
@@ -478,12 +479,13 @@ export class SessionController {
     });
 
     /**
-     * Get session recommendations
+     * Get enhanced session recommendations
      * GET /api/v1/sessions/:sessionToken/recommendations
      */
     getSessionRecommendations = asyncHandler(
         async (req: Request, res: Response) => {
             const { sessionToken } = req.params;
+            const { creditScore, maxAnnualFee, preferredNetwork, includeBusinessCards } = req.query;
 
             if (!sessionToken) {
                 throw new ApiError(
@@ -508,72 +510,166 @@ export class SessionController {
                 );
             }
 
-            // Get recommendations with card details
-            const recommendations = await prisma.recommendation.findMany({
-                where: { sessionId: session.id },
-                orderBy: { rank: 'asc' },
-            });
+            try {
+                // Get enhanced recommendations using the new service
+                const recommendationResult = await recommendationService.generateRecommendations(
+                    session.id,
+                    {
+                        creditScore: creditScore as any,
+                        maxAnnualFee: maxAnnualFee ? Number(maxAnnualFee) : undefined,
+                        preferredNetwork: preferredNetwork as any,
+                        includeBusinessCards: includeBusinessCards === 'true',
+                    }
+                );
 
-            // Get card details separately
-            const cardIds = recommendations.map((rec) => rec.cardId);
-            const cards = await prisma.creditCard.findMany({
-                where: { id: { in: cardIds } },
-            });
+                // Get detailed card information for each recommendation
+                const cardIds = recommendationResult.recommendations.map(rec => rec.cardId);
+                const detailedCards = await prisma.creditCard.findMany({
+                    where: { id: { in: cardIds } },
+                    include: {
+                        issuer: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                color: true,
+                                marketShare: true
+                            }
+                        },
+                        network: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                color: true
+                            }
+                        },
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                description: true,
+                                iconName: true,
+                                color: true
+                            }
+                        },
+                        subCategory: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                description: true
+                            }
+                        },
+                        acceleratedRewards: {
+                            include: {
+                                rewardCategory: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        slug: true,
+                                        description: true,
+                                        mccCodes: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
 
-            const cardMap = cards.reduce(
-                (acc, card) => {
+                const cardMap = detailedCards.reduce((acc, card) => {
                     acc[card.id] = card;
                     return acc;
-                },
-                {} as Record<string, any>,
-            );
+                }, {} as Record<string, any>);
 
-            const enrichedRecommendations = recommendations.map((rec) => {
-                const card = cardMap[rec.cardId];
-                return {
-                    rank: rec.rank,
-                    score: rec.score,
-                    potentialSavings: rec.potentialSavings,
-                    currentEarnings: rec.currentEarnings,
-                    yearlyEstimate: rec.yearlyEstimate,
-                    benefitBreakdown: rec.benefitBreakdown,
-                    primaryReason: rec.primaryReason,
-                    pros: rec.pros,
-                    cons: rec.cons,
-                    signupBonusValue: rec.signupBonusValue,
-                    feeBreakeven: rec.feeBreakeven,
-                    card: card
-                        ? {
+                // Enhance recommendations with detailed card data
+                const enhancedRecommendations = recommendationResult.recommendations.map(rec => {
+                    const card = cardMap[rec.cardId];
+                    return {
+                        ...rec,
+                        card: {
                             id: card.id,
                             name: card.name,
+                            slug: card.slug,
+                            description: card.description,
+                            iconName: card.iconName,
+                            color: card.color,
+                            isActive: card.isActive,
+                            isLifetimeFree: card.isLifetimeFree,
+                            launchDate: card.launchDate,
                             issuer: card.issuer,
                             network: card.network,
-                            annualFee: card.annualFee,
-                            signupBonus: card.signupBonus,
-                            signupSpendReq: card.signupSpendReq,
-                            signupTimeReq: card.signupTimeReq,
-                            tier: card.tier,
-                            creditRequirement: card.creditRequirement,
-                            description: card.description,
-                            applyUrl: card.applyUrl,
+                            category: card.category,
+                            subCategory: card.subCategory,
+                            feeStructure: card.feeStructure,
+                            eligibilityRequirements: card.eligibilityRequirements,
+                            rewardStructure: card.rewardStructure,
+                            additionalBenefits: card.additionalBenefits,
+                            uniqueFeatures: card.uniqueFeatures,
+                            popularityScore: card.popularityScore,
+                            customerSatisfactionScore: Number(card.customerSatisfactionScore),
+                            recommendationScore: card.recommendationScore,
+                            acceleratedRewards: card.acceleratedRewards.map((reward: any) => ({
+                                id: reward.id,
+                                rewardCategory: reward.rewardCategory,
+                                merchantPatterns: reward.merchantPatterns,
+                                rewardRate: Number(reward.rewardRate),
+                                conditions: reward.conditions,
+                                cappingLimit: reward.cappingLimit ? Number(reward.cappingLimit) : null,
+                                cappingPeriod: reward.cappingPeriod,
+                                description: reward.description
+                            }))
                         }
-                        : null,
-                };
-            });
+                    };
+                });
 
-            sendResponse(res, {
-                status: StatusCodes.OK,
-                message: 'Recommendations retrieved successfully',
-                data: {
-                    recommendations: enrichedRecommendations,
-                    totalRecommendations: enrichedRecommendations.length,
-                    sessionSummary: {
-                        totalSpend: session.totalSpend,
-                        topCategory: session.topCategory,
-                        totalTransactions: session.totalTransactions,
+                sendResponse(res, {
+                    status: StatusCodes.OK,
+                    message: 'Enhanced recommendations retrieved successfully',
+                    data: {
+                        sessionToken,
+                        recommendations: enhancedRecommendations,
+                        criteria: recommendationResult.criteria,
+                        summary: recommendationResult.summary,
+                        analysis: recommendationResult.analysis,
+                        totalCards: recommendationResult.totalCards,
+                        processingTimeMs: recommendationResult.processingTimeMs,
+                        generatedAt: recommendationResult.generatedAt,
+                        sessionSummary: {
+                            totalSpend: Number(session.totalSpend || 0),
+                            topCategory: session.topCategory,
+                            totalTransactions: session.totalTransactions,
+                        },
                     },
-                },
-            });
+                });
+
+            } catch (error) {
+                logger.error('Failed to generate enhanced recommendations', {
+                    sessionToken,
+                    error
+                });
+
+                // Fallback to stored recommendations if service fails
+                const storedRecommendations = await recommendationService.getSessionRecommendations(session.id);
+
+                sendResponse(res, {
+                    status: StatusCodes.OK,
+                    message: 'Recommendations retrieved successfully (cached)',
+                    data: {
+                        sessionToken,
+                        recommendations: storedRecommendations,
+                        totalRecommendations: storedRecommendations.length,
+                        generatedAt: new Date(),
+                        fallback: true,
+                        sessionSummary: {
+                            totalSpend: Number(session.totalSpend || 0),
+                            topCategory: session.topCategory,
+                            totalTransactions: session.totalTransactions,
+                        },
+                    },
+                });
+            }
         },
     );
 

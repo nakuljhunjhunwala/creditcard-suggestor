@@ -6,6 +6,7 @@ import type {
     Transaction,
     PaginatedResponse,
     CreditCardRecommendation,
+    RecommendationResponse,
     SpendingAnalysis,
     UploadResponse,
     ApiError,
@@ -110,12 +111,32 @@ class ApiClient {
         };
     }
 
-    // Recommendations
-    async getRecommendations(sessionToken: string): Promise<CreditCardRecommendation[]> {
-        const response = await this.client.get<any>(
-            `/sessions/${sessionToken}/recommendations`
+    // Enhanced Recommendations
+    async getRecommendations(
+        sessionToken: string,
+        options?: {
+            creditScore?: string;
+            maxAnnualFee?: number;
+            preferredNetwork?: string;
+            includeBusinessCards?: boolean;
+        }
+    ): Promise<RecommendationResponse> {
+        const params = new URLSearchParams();
+        if (options?.creditScore) params.append('creditScore', options.creditScore);
+        if (options?.maxAnnualFee) params.append('maxAnnualFee', options.maxAnnualFee.toString());
+        if (options?.preferredNetwork) params.append('preferredNetwork', options.preferredNetwork);
+        if (options?.includeBusinessCards) params.append('includeBusinessCards', options.includeBusinessCards.toString());
+
+        const response = await this.client.get<ApiResponse<RecommendationResponse>>(
+            `/sessions/${sessionToken}/recommendations${params.toString() ? '?' + params.toString() : ''}`
         );
-        return response.data.data.recommendations || [];
+        return response.data.data!;
+    }
+
+    // Legacy method for backward compatibility
+    async getRecommendationsList(sessionToken: string): Promise<CreditCardRecommendation[]> {
+        const response = await this.getRecommendations(sessionToken);
+        return response.recommendations || [];
     }
 
     // Analysis
