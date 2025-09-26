@@ -1,4 +1,3 @@
-import React from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 type Slice = {
@@ -35,7 +34,7 @@ export function DonutChart({ slices }: DonutChartProps) {
             paddingAngle={1}
             dataKey="value"
           >
-            {data.map((entry, index) => (
+            {data.map((_, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>

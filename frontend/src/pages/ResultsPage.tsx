@@ -403,8 +403,8 @@ export function ResultsPage() {
         Card: r.card?.name || '',
         Issuer: r.card?.issuer || '',
         Network: r.card?.network || '',
-        AnnualFee: r.card?.annualFee ?? '',
-        SignupBonusPts: r.card?.signupBonus ?? '',
+        AnnualFee: r.card?.feeStructure?.annualFee ?? '',
+        SignupBonusPts: r.signupBonusValue ?? '',
         Score: r.score,
         MatchConfidencePct: Number.isFinite(r.confidenceScore) ? Math.round(r.confidenceScore * 100) : 0,
         PrimaryReason: r.primaryReason,
@@ -704,7 +704,7 @@ export function ResultsPage() {
                           <span className="text-2xl">🏆</span>
                         </div>
                         <h3 className="font-bold text-lg">{recommendations[0]?.card?.name}</h3>
-                        <p className="text-gray-600 text-sm">{recommendations[0]?.card?.issuer}</p>
+                        <p className="text-gray-600 text-sm">{recommendations[0]?.card?.issuer?.name}</p>
                         <div className="mt-2">
                           <Badge className="bg-green-100 text-green-800">
                             Score: {recommendations[0]?.score}/100

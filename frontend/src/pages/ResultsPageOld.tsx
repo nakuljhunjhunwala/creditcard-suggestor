@@ -325,11 +325,11 @@ export function ResultsPage() {
                       <div>
                         <p className="font-medium">{category.category}</p>
                         <p className="text-sm text-muted-foreground">
-                          {category.transactionCount} transactions • Total: {formatCurrency(category.amount)}
+                          {category.transactionCount} transactions • Total: {formatCurrency(Number(category.amount))}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold">{formatCurrency(category.amount)}</p>
+                        <p className="font-bold">{formatCurrency(Number(category.amount))}</p>
                         <p className="text-sm text-muted-foreground">
                           {category.percentage}% of total
                         </p>
