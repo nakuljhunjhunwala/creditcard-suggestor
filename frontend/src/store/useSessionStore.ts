@@ -242,8 +242,8 @@ export const useSessionStore = create<SessionState>()(
                 if (!session) return;
 
                 try {
-                    const recommendations = await apiClient.getRecommendations(session.sessionToken);
-                    set({ recommendations });
+                    const response = await apiClient.getRecommendations(session.sessionToken);
+                    set({ recommendations: response.recommendations });
                 } catch (error) {
                     set({ error: error as ApiError });
                 }

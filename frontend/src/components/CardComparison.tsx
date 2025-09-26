@@ -105,7 +105,7 @@ export const CardComparison: React.FC<CardComparisonProps> = ({
 
       {/* Comparison Table */}
       <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${selectedCards.length}, 1fr)` }}>
-        {selectedCards.map((recommendation, index) => {
+        {selectedCards.map((recommendation) => {
           const { card } = recommendation;
           
           return (
