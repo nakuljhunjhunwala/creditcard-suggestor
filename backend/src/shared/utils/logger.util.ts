@@ -72,7 +72,7 @@ if (env.NODE_ENV === 'production' && env.DATADOG_API_KEY) {
       service: env.DATADOG_SERVICE,
       ddsource: 'nodejs',
       intakeRegion: env.DATADOG_REGION,
-    }) as winston.transport,
+    }),
   );
 }
 

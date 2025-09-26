@@ -2,18 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Progress } from '../components/ui/progress';
+import { Separator } from '../components/ui/separator';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { DonutChart } from '../components/DonutChart';
 import { SavingsBreakdownChart } from '../components/SavingsBreakdownChart';
 import { CardComparison } from '../components/CardComparison';
 import { RecommendationSummary } from '../components/RecommendationSummary';
 import { apiClient } from '../services/api';
-import type { RecommendationResponse } from '../types';
+import type { RecommendationResponse, CreditCardRecommendation } from '../types';
 import {
   TrendingUp,
+  DollarSign,
   CreditCard,
   Target,
+  Clock,
+  Users,
   BarChart3,
   PieChart,
   Filter,
@@ -153,7 +159,7 @@ export const EnhancedResultsPage: React.FC = () => {
     );
   }
 
-  const { recommendations, summary, analysis, sessionSummary } = data;
+  const { recommendations, summary, criteria, analysis, sessionSummary } = data;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">

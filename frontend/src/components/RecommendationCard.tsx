@@ -444,7 +444,7 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
                     <div className="mt-4">
                       <h5 className="font-medium text-gray-900 mb-2">Employment Types</h5>
                       <div className="flex flex-wrap gap-2">
-                        {card.eligibilityRequirements.employmentType?.map((type: string, index: number) => (
+                        {card.eligibilityRequirements.employmentTypes?.map((type, index) => (
                           <Badge key={index} variant="outline" className="text-xs">
                             {type}
                           </Badge>

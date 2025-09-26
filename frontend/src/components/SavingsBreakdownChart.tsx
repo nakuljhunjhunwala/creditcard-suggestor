@@ -3,7 +3,7 @@ import { Card } from './ui/card';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import type { BenefitBreakdown } from '../types';
-import { TrendingUp, DollarSign } from 'lucide-react';
+import { TrendingUp, DollarSign, Percent } from 'lucide-react';
 
 interface SavingsBreakdownChartProps {
   breakdown: BenefitBreakdown[];

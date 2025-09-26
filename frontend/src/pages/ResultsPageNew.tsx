@@ -49,9 +49,9 @@ export function ResultsPage() {
       try {
         await fetchSessionStatus(sessionToken);
         await Promise.all([
-          fetchTransactions(),
-          fetchRecommendations(),
-          fetchAnalysis()
+          fetchTransactions(sessionToken),
+          fetchRecommendations(sessionToken),
+          fetchAnalysis(sessionToken)
         ]);
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -247,7 +247,7 @@ export function ResultsPage() {
                             </span>
                             <div>
                               <h3 className="text-2xl font-bold text-gray-800">{rec.card?.name || `Card ${rec.rank}`}</h3>
-                              <p className="text-lg text-gray-600">{rec.card?.issuer?.name} • {rec.card?.network?.name}</p>
+                              <p className="text-lg text-gray-600">{rec.card?.issuer} • {rec.card?.network}</p>
                             </div>
                           </div>
                           <p className="text-gray-700 mb-4 text-lg">{rec.card?.description || rec.primaryReason}</p>
@@ -257,13 +257,13 @@ export function ResultsPage() {
                             <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                               <p className="text-sm text-green-600 font-medium">Annual Fee</p>
                               <p className="text-xl font-bold text-green-700">
-                                {rec.card?.feeStructure?.annualFee ? formatCurrency(Number(rec.card.feeStructure.annualFee)) : 'N/A'}
+                                {rec.card?.annualFee ? formatCurrency(Number(rec.card.annualFee)) : 'N/A'}
                               </p>
                             </div>
                             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                               <p className="text-sm text-blue-600 font-medium">Signup Bonus</p>
                               <p className="text-xl font-bold text-blue-700">
-                                {rec.signupBonusValue ? `${Number(rec.signupBonusValue).toLocaleString()} pts` : 'N/A'}
+                                {rec.card?.signupBonus ? `${Number(rec.card.signupBonus).toLocaleString()} pts` : 'N/A'}
                               </p>
                             </div>
                             <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
@@ -272,7 +272,7 @@ export function ResultsPage() {
                             </div>
                             <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
                               <p className="text-sm text-yellow-600 font-medium">Credit Req.</p>
-                              <p className="text-lg font-bold text-yellow-700 capitalize">{rec.card?.eligibilityRequirements?.minimumCreditScore || 'N/A'}</p>
+                              <p className="text-lg font-bold text-yellow-700 capitalize">{rec.card?.creditRequirement}</p>
                             </div>
                           </div>
 
@@ -315,15 +315,17 @@ export function ResultsPage() {
                       </div>
 
                       {/* Apply Button */}
-                      <div className="flex justify-end">
-                        <Button 
-                          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 text-lg"
-                          onClick={() => alert('Apply functionality coming soon!')}
-                        >
-                          Apply Now
-                          <ExternalLink className="h-4 w-4 ml-2" />
-                        </Button>
-                      </div>
+                      {rec.card?.applyUrl && (
+                        <div className="flex justify-end">
+                          <Button 
+                            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 text-lg"
+                            onClick={() => window.open(rec.card.applyUrl, '_blank')}
+                          >
+                            Apply Now
+                            <ExternalLink className="h-4 w-4 ml-2" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useSessionStore } from '../store/useSessionStore';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { CreditCard, Upload, Target, BarChart3 } from 'lucide-react';
 import { useEffect } from 'react';
