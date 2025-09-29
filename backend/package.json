@@ -16,6 +16,7 @@
     "prisma:studio": "prisma studio --schema src/database/schema.prisma",
     "db:seed": "ts-node -r tsconfig-paths/register src/database/seeds/index.ts",
     "db:reset": "prisma migrate reset --force --schema src/database/schema.prisma && npm run db:seed",
+    "db:seed:prod": "node -r tsconfig-paths/register dist/database/seeds/index.js",
     "typecheck": "tsc --noEmit",
     "quality": "npm run prisma:generate && npm run typecheck && npm run lint:fix && npm run format && npm run build",
     "quality:check": "npm run prisma:generate && npm run typecheck && npm run lint && npm run build"
