@@ -86,7 +86,7 @@ export const CardComparison: React.FC<CardComparisonProps> = ({
   }
 
   const scores = selectedCards.map(card => card.score);
-  const savings = selectedCards.map(card => card.potentialSavings);
+  const savings = selectedCards.map(card => card.potentialSavings || 0);
   const annualFees = selectedCards.map(card => card.card.feeStructure.annualFee);
   const signupBonuses = selectedCards.map(card => card.signupBonusValue || 0);
   const customerRatings = selectedCards.map(card => card.card.customerSatisfactionScore);
@@ -149,10 +149,10 @@ export const CardComparison: React.FC<CardComparisonProps> = ({
                   <div className="text-center p-3 bg-white rounded-lg">
                     <div className="flex items-center justify-center mb-1">
                       <TrendingUp className="w-4 h-4 text-green-600 mr-1" />
-                      {getComparisonIcon(recommendation.potentialSavings, savings, true)}
+                      {getComparisonIcon(recommendation.potentialSavings || 0, savings, true)}
                     </div>
                     <div className="font-bold text-green-600">
-                      {formatCurrency(recommendation.potentialSavings)}
+                      {formatCurrency(recommendation.potentialSavings || 0)}
                     </div>
                     <div className="text-xs text-gray-600">Annual Savings</div>
                   </div>

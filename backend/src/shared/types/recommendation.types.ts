@@ -36,26 +36,26 @@ export interface CardRecommendation {
     rank: number;
     score: number;
 
-    // Statement period (uploaded data timeframe)
-    statementSavings: number;
-    statementEarnings: number;
+    // Simplified earnings - what the user really cares about
+    estimatedAnnualCashback: number;  // How much cashback they'll earn per year
+    signupBonusValue?: number;        // Welcome bonus value
 
-    // Annual projected (extrapolated to 12 months)
-    annualSavings: number;
-    annualEarnings: number;
-
-    // Legacy fields (backwards compatibility)
-    potentialSavings: number;  // Same as annualSavings
-    currentEarnings: number;
-    yearlyEstimate: number;    // Same as annualEarnings
-
-    signupBonusValue?: number;
-    feeBreakeven?: number;
+    // Contextual information
     primaryReason: string;
     pros: string[];
     cons: string[];
     benefitBreakdown: BenefitBreakdown[];
     confidenceScore: number;
+
+    // Legacy fields (backwards compatibility - keep for now but hidden from main response)
+    statementSavings?: number;
+    statementEarnings?: number;
+    annualSavings?: number;
+    annualEarnings?: number;
+    potentialSavings?: number;
+    currentEarnings?: number;
+    yearlyEstimate?: number;
+    feeBreakeven?: number;
     scoreBreakdown?: ScoreBreakdown;
 }
 

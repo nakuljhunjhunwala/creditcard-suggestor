@@ -198,25 +198,25 @@ export class RecommendationService {
                 rank: index + 1,
                 score: config.scoring.baseScore - (index * 5),
 
-                // Statement period (uploaded data timeframe)
-                statementSavings: 0,
-                statementEarnings: 0,
+                // Simplified - what users really care about
+                estimatedAnnualCashback: 0,
+                signupBonusValue: 0,
 
-                // Annual projected (extrapolated to 12 months)
-                annualSavings: 0,
-                annualEarnings: 0,
-
-                // Legacy fields (backwards compatibility)
-                potentialSavings: 0,
-                currentEarnings: 0,
-                yearlyEstimate: 0,
-
+                // Contextual information
                 primaryReason: 'Recommended for general spending and building credit history',
                 pros: this.generateFallbackPros(card, config || {} as RecommendationConfig),
                 cons: this.generateFallbackCons(card, config || {} as RecommendationConfig),
                 benefitBreakdown: [],
                 confidenceScore: 0.6,
-                signupBonusValue: 0,
+
+                // Legacy fields (hidden from main response but kept for compatibility)
+                statementSavings: 0,
+                statementEarnings: 0,
+                annualSavings: 0,
+                annualEarnings: 0,
+                potentialSavings: 0,
+                currentEarnings: 0,
+                yearlyEstimate: 0,
                 feeBreakeven: 12,
             }));
 
@@ -255,26 +255,26 @@ export class RecommendationService {
                 rank: rec.rank,
                 score: Number(rec.score),
 
-                // Statement period (uploaded data timeframe) - TODO: Add to database schema
-                statementSavings: 0,
-                statementEarnings: 0,
-
-                // Annual projected (extrapolated to 12 months) - TODO: Add to database schema
-                annualSavings: 0,
-                annualEarnings: 0,
-
-                // Legacy fields (backwards compatibility)
-                potentialSavings: Number(rec.potentialSavings),
-                currentEarnings: Number(rec.currentEarnings),
-                yearlyEstimate: Number(rec.yearlyEstimate),
-
+                // Simplified - what users really care about
+                estimatedAnnualCashback: Number(rec.yearlyEstimate || 0),
                 signupBonusValue: rec.signupBonusValue ? Number(rec.signupBonusValue) : undefined,
-                feeBreakeven: rec.feeBreakeven ? Number(rec.feeBreakeven) : undefined,
+
+                // Contextual information
                 primaryReason: rec.primaryReason,
                 pros: rec.pros as string[],
                 cons: rec.cons as string[],
                 benefitBreakdown: rec.benefitBreakdown as any[],
                 confidenceScore: Number(rec.score) * 0.01,
+
+                // Legacy fields (hidden from main response but kept for compatibility)
+                statementSavings: 0,
+                statementEarnings: 0,
+                annualSavings: 0,
+                annualEarnings: 0,
+                potentialSavings: Number(rec.potentialSavings),
+                currentEarnings: Number(rec.currentEarnings),
+                yearlyEstimate: Number(rec.yearlyEstimate),
+                feeBreakeven: rec.feeBreakeven ? Number(rec.feeBreakeven) : undefined,
             }));
         } catch (error) {
             logger.error('Failed to get session recommendations', { sessionId, error });
@@ -680,13 +680,28 @@ export class RecommendationService {
     ): RecommendationCriteria {
         const totalSpending = patterns.reduce((sum, p) => sum + p.totalSpent, 0);
 
+        // Calculate dynamic maxAnnualFee based on spending
+        // For high spenders (>2L annually), allow premium cards up to 12.5k
+        // For medium spenders (50k-2L), allow mid-tier cards up to 5k
+        // For low spenders (<50k), stick to low/no fee cards
+        const annualSpending = Math.abs(totalSpending) * 12; // Rough annual projection
+        let defaultMaxAnnualFee = 500; // Conservative default
+
+        if (annualSpending >= 200000) { // 2L+ annual spending
+            defaultMaxAnnualFee = 12500;
+        } else if (annualSpending >= 50000) { // 50k-2L annual spending
+            defaultMaxAnnualFee = 5000;
+        } else if (annualSpending >= 20000) { // 20k-50k annual spending
+            defaultMaxAnnualFee = 2500;
+        }
+
         return {
             totalSpending,
             monthlySpending: totalSpending,
             topCategories: patterns.slice(0, 5),
             creditScore: options.creditScore || CreditScore.GOOD,
             preferredNetwork: options.preferredNetwork,
-            maxAnnualFee: options.maxAnnualFee || 500,
+            maxAnnualFee: options.maxAnnualFee || defaultMaxAnnualFee,
             prioritizeSignupBonus: totalSpending >= 3000,
             includeBusinessCards: options.includeBusinessCards || false,
             preferredIssuer: options.preferredIssuer,
@@ -733,20 +748,42 @@ export class RecommendationService {
             filters.issuer = { slug: criteria.preferredIssuer };
         }
 
+        // Build eligibility requirements filter properly without overwriting
+        const eligibilityFilters: any[] = [];
+
         if (criteria.minIncome) {
-            filters.eligibilityRequirements = {
+            eligibilityFilters.push({
                 path: ['minimumIncome', 'salaried'],
                 lte: criteria.minIncome
-            };
+            });
         }
 
         if (criteria.creditScore) {
             const minScore = CREDIT_SCORE_VALUES[criteria.creditScore];
-            filters.eligibilityRequirements = {
+            eligibilityFilters.push({
                 path: ['minimumCreditScore'],
                 lte: minScore
-            };
+            });
         }
+
+        // Apply eligibility filters using AND logic if we have any
+        if (eligibilityFilters.length > 0) {
+            if (eligibilityFilters.length === 1) {
+                filters.eligibilityRequirements = eligibilityFilters[0];
+            } else {
+                filters.AND = eligibilityFilters.map(filter => ({
+                    eligibilityRequirements: filter
+                }));
+            }
+        }
+
+        // Log the filters being applied for debugging
+        logger.info('Applying card filters', {
+            filters: JSON.stringify(filters, null, 2),
+            maxAnnualFee: criteria.maxAnnualFee,
+            creditScore: criteria.creditScore,
+            minIncome: criteria.minIncome
+        });
 
         const cards = await prisma.creditCard.findMany({
             where: filters,
@@ -761,6 +798,11 @@ export class RecommendationService {
                     }
                 }
             }
+        });
+
+        logger.info('Eligible cards found', {
+            totalCards: cards.length,
+            cardNames: cards.map(c => c.name)
         });
 
         return cards.map(card => ({
@@ -806,25 +848,25 @@ export class RecommendationService {
                 rank: index + 1,
                 score: 25 + (index * 5),
 
-                // Statement period (uploaded data timeframe)
-                statementSavings: 0,
-                statementEarnings: 0,
+                // Simplified - what users really care about
+                estimatedAnnualCashback: 0,
+                signupBonusValue: 0,
 
-                // Annual projected (extrapolated to 12 months)
-                annualSavings: 0,
-                annualEarnings: 0,
-
-                // Legacy fields (backwards compatibility)
-                potentialSavings: 0,
-                currentEarnings: 0,
-                yearlyEstimate: 0,
-
+                // Contextual information
                 primaryReason: 'Recommended for general use',
                 pros: this.generateFallbackPros(card, config || {} as RecommendationConfig),
                 cons: this.generateFallbackCons(card, config || {} as RecommendationConfig),
                 benefitBreakdown: [],
                 confidenceScore: 0.5,
-                signupBonusValue: 0,
+
+                // Legacy fields (hidden from main response but kept for compatibility)
+                statementSavings: 0,
+                statementEarnings: 0,
+                annualSavings: 0,
+                annualEarnings: 0,
+                potentialSavings: 0,
+                currentEarnings: 0,
+                yearlyEstimate: 0,
                 feeBreakeven: 12,
             }));
         }
@@ -837,11 +879,12 @@ export class RecommendationService {
             cardIds: savingsAnalyses.map(s => s.cardId)
         });
 
-        for (const savings of savingsAnalyses) {
+        // Process all recommendations in parallel for better performance
+        const recommendationPromises = savingsAnalyses.map(async (savings) => {
             const card = cards.find(c => c.id === savings.cardId);
             if (!card) {
                 logger.warn('Card not found for savings analysis', { cardId: savings.cardId });
-                continue;
+                return null;
             }
 
             const recommendation = await this.buildRecommendationFromSavings(
@@ -854,41 +897,60 @@ export class RecommendationService {
             );
 
             if (recommendation) {
-                recommendations.push(recommendation);
                 logger.info('Built recommendation', {
                     cardId: card.id,
                     cardName: card.name,
                     score: recommendation.score,
                     potentialSavings: recommendation.potentialSavings
                 });
+                return recommendation;
             } else {
                 logger.warn('Failed to build recommendation', { cardId: card.id, cardName: card.name });
+                return null;
             }
-        }
+        });
+
+        // Wait for all recommendations to complete and filter out nulls
+        const allRecommendations = await Promise.all(recommendationPromises);
+        const validRecommendations = allRecommendations.filter(rec => rec !== null) as CardRecommendation[];
 
         // PRIMARY SORT: Net savings (most important for user value)
         // SECONDARY SORT: Score (for feature alignment)
-        const sortedRecommendations = recommendations
+        const sortedRecommendations = validRecommendations
             .sort((a, b) => {
                 // First priority: Positive savings always beats negative savings
-                const aPositive = a.potentialSavings > 0;
-                const bPositive = b.potentialSavings > 0;
+                const aSavings = a.potentialSavings || 0;
+                const bSavings = b.potentialSavings || 0;
+                const aPositive = aSavings > 0;
+                const bPositive = bSavings > 0;
+                const aNegative = aSavings < 0;
+                const bNegative = bSavings < 0;
 
-                if (aPositive && !bPositive) return -1; // a wins (positive vs negative)
-                if (!aPositive && bPositive) return 1;  // b wins (positive vs negative)
+                if (aPositive && !bPositive) return -1; // a wins (positive vs negative/zero)
+                if (!aPositive && bPositive) return 1;  // b wins (positive vs negative/zero)
 
-                // If both positive or both negative, sort by net savings amount
+                // If both positive, sort by higher savings amount
                 if (aPositive && bPositive) {
-                    return b.potentialSavings - a.potentialSavings; // Higher savings first
+                    return bSavings - aSavings; // Higher savings first
                 }
 
                 // If both negative, prefer less negative (closer to breakeven)
-                if (!aPositive && !bPositive) {
-                    return b.potentialSavings - a.potentialSavings; // Less negative first
+                if (aNegative && bNegative) {
+                    return bSavings - aSavings; // Less negative first
                 }
 
-                // Fallback to score if savings are equal
-                return b.score - a.score;
+                // If one is negative and the other is zero, prefer zero
+                if (aNegative && !bNegative) return 1;  // b wins (zero vs negative)
+                if (!aNegative && bNegative) return -1; // a wins (zero vs negative)
+
+                // If both are zero or nearly equal savings, sort by score
+                const savingsDiff = Math.abs(aSavings - bSavings);
+                if (savingsDiff < 0.01) { // Savings are essentially equal
+                    return b.score - a.score; // Higher score first
+                }
+
+                // Default: sort by savings amount
+                return bSavings - aSavings;
             })
             .map((rec, index) => ({ ...rec, rank: index + 1 }));
 
@@ -934,26 +996,26 @@ export class RecommendationService {
                 rank: 0,
                 score: Math.min(100, Math.max(0, score)),
 
-                // Statement period (uploaded data) - for the actual timeframe
-                statementSavings: savings.netSavings,
-                statementEarnings: savings.totalPotentialEarnings,
-
-                // Annual projected - extrapolated to 12 months
-                annualSavings: savings.netSavings * projectionMultiplier,
-                annualEarnings: savings.totalPotentialEarnings * projectionMultiplier,
-
-                // Legacy fields (keep for backwards compatibility but with clearer naming)
-                potentialSavings: savings.netSavings * projectionMultiplier, // Same as annualSavings
-                currentEarnings: savings.totalCurrentEarnings * projectionMultiplier,
-                yearlyEstimate: savings.totalPotentialEarnings * projectionMultiplier, // Same as annualEarnings
-
+                // Simplified - what users really care about
+                estimatedAnnualCashback: Math.max(0, savings.totalPotentialEarnings * projectionMultiplier),
                 signupBonusValue: savings.signupBonusValue,
-                feeBreakeven: savings.monthsToBreakeven || undefined,
+
+                // Contextual information
                 primaryReason,
                 pros,
                 cons,
                 benefitBreakdown: this.convertSavingsToBreakdown(savings, projectedAnnualSpending),
                 confidenceScore,
+
+                // Legacy fields (hidden from main response but kept for compatibility)
+                statementSavings: savings.netSavings,
+                statementEarnings: savings.totalPotentialEarnings,
+                annualSavings: savings.netSavings * projectionMultiplier,
+                annualEarnings: savings.totalPotentialEarnings * projectionMultiplier,
+                potentialSavings: savings.netSavings * projectionMultiplier,
+                currentEarnings: savings.totalCurrentEarnings * projectionMultiplier,
+                yearlyEstimate: savings.totalPotentialEarnings * projectionMultiplier,
+                feeBreakeven: savings.monthsToBreakeven || undefined,
             };
         } catch (error) {
             logger.error('Error building recommendation from savings', { cardId: card.id, error });
@@ -1102,8 +1164,34 @@ export class RecommendationService {
 
                 alignmentScore += categoryScore * weight;
             } else {
+                // No accelerated reward found - score based on general value proposition
                 const baseRate = (card.rewardStructure as any)?.baseRewardRate || 1;
-                alignmentScore += (baseRate * 10) * weight;
+                let generalScore = baseRate * 15; // Better base scoring
+
+                // Bonus for lifetime free cards when no accelerated rewards
+                if (card.isLifetimeFree) {
+                    generalScore += 25; // Significant bonus for no annual fee
+                }
+
+                // Bonus for low annual fee cards
+                const annualFee = card.feeStructure?.annualFee || 0;
+                if (annualFee <= 500 && !card.isLifetimeFree) {
+                    generalScore += 15; // Moderate bonus for low fees
+                } else if (annualFee <= 1000 && !card.isLifetimeFree) {
+                    generalScore += 10;
+                } else if (annualFee > 2000) {
+                    generalScore -= 10; // Penalty for high fees without matching rewards
+                }
+
+                // Bonus for high customer satisfaction (trust factor)
+                const customerSat = card.customerSatisfactionScore || 0;
+                if (customerSat >= 4.5) {
+                    generalScore += 10;
+                } else if (customerSat >= 4.0) {
+                    generalScore += 5;
+                }
+
+                alignmentScore += Math.min(60, Math.max(5, generalScore)) * weight;
             }
         }
 
@@ -1216,6 +1304,24 @@ export class RecommendationService {
             bonus += config.bonusFactors.highCustomerSatisfaction;
         }
 
+        // Welcome bonus scoring - important for first-year value
+        const welcomeBenefits = card.additionalBenefits?.find(benefit => benefit.categoryId === 'welcome_benefits');
+        if (welcomeBenefits?.benefits && welcomeBenefits.benefits.length > 0) {
+            const totalWelcomeValue = welcomeBenefits.benefits.reduce((sum, benefit) => {
+                const value = typeof benefit.benefitValue === 'number' ? benefit.benefitValue : 0;
+                return sum + value;
+            }, 0);
+
+            // Scale welcome bonus impact based on value
+            if (totalWelcomeValue >= 2000) {
+                bonus += 15; // High welcome bonus
+            } else if (totalWelcomeValue >= 1000) {
+                bonus += 10; // Medium welcome bonus
+            } else if (totalWelcomeValue >= 500) {
+                bonus += 5; // Basic welcome bonus
+            }
+        }
+
         const digitalFeatures = card.uniqueFeatures?.filter((f: string) =>
             DIGITAL_FEATURE_KEYWORDS.some(keyword => f.includes(keyword))
         ).length || 0;
@@ -1282,10 +1388,108 @@ export class RecommendationService {
      * Find best accelerated reward for spending pattern
      */
     private findBestAcceleratedReward(acceleratedRewards: any[], pattern: SpendingPattern): any {
-        return acceleratedRewards?.find(reward =>
-            reward.rewardCategory?.name === pattern.categoryName ||
-            reward.rewardCategory?.mccCodes?.some((code: string) => pattern.mccCodes.includes(code))
-        );
+        if (!acceleratedRewards || acceleratedRewards.length === 0) {
+            return null;
+        }
+
+        let bestReward = null;
+        let bestMatchScore = 0;
+
+        for (const reward of acceleratedRewards) {
+            // Use the same sophisticated matching logic as the savings calculator
+            let score = 0;
+
+            // Check for brand-specific vs general category alignment
+            const isBrandSpecific = reward.rewardCategory?.slug === 'brand-specific' ||
+                reward.rewardCategory?.name === 'Brand Specific';
+            let brandSpecificPenalty = 0;
+
+            if (isBrandSpecific) {
+                if (reward.merchantPatterns && Array.isArray(reward.merchantPatterns)) {
+                    const merchantMatch = this.checkMerchantPatternMatch(reward.merchantPatterns, pattern);
+                    if (merchantMatch > 0) {
+                        score += merchantMatch * 100; // High score for exact brand matches
+                    } else {
+                        brandSpecificPenalty = 60; // Penalty for brand-specific without merchant match
+                    }
+                } else {
+                    brandSpecificPenalty = 60;
+                }
+            }
+
+            // Direct category match
+            if (reward.rewardCategory?.name === pattern.categoryName) {
+                score += 100;
+
+                // Bonus for non-brand-specific category matches
+                if (!isBrandSpecific) {
+                    score += 20;
+                }
+            }
+
+            // MCC code match
+            if (reward.rewardCategory?.mccCodes && Array.isArray(reward.rewardCategory.mccCodes)) {
+                const mccMatches = pattern.mccCodes.filter(code =>
+                    reward.rewardCategory.mccCodes.includes(code)
+                ).length;
+                score += mccMatches * 40;
+            }
+
+            // Apply brand-specific penalty
+            score = Math.max(0, score - brandSpecificPenalty);
+
+            if (score > bestMatchScore) {
+                bestMatchScore = score;
+                bestReward = reward;
+            }
+        }
+
+        return bestReward;
+    }
+
+    /**
+     * Helper function to check merchant pattern matches
+     */
+    private checkMerchantPatternMatch(merchantPatterns: string[], pattern: SpendingPattern): number {
+        if (!pattern.merchants) return 0;
+
+        let maxMatch = 0;
+        for (const merchant of pattern.merchants) {
+            for (const merchantPattern of merchantPatterns) {
+                const similarity = this.calculateMerchantSimilarity(merchant.toLowerCase(), merchantPattern.toLowerCase());
+                maxMatch = Math.max(maxMatch, similarity);
+            }
+        }
+
+        return maxMatch;
+    }
+
+    /**
+     * Calculate similarity between merchant and pattern
+     */
+    private calculateMerchantSimilarity(merchant: string, pattern: string): number {
+        // Exact match
+        if (merchant === pattern) return 1.0;
+
+        // Contains match
+        if (merchant.includes(pattern) || pattern.includes(merchant)) return 0.8;
+
+        // Fuzzy matching for common variations
+        const merchantWords = merchant.split(/\s+/);
+        const patternWords = pattern.split(/\s+/);
+
+        let matches = 0;
+        for (const merchantWord of merchantWords) {
+            for (const patternWord of patternWords) {
+                if (merchantWord.includes(patternWord) || patternWord.includes(merchantWord)) {
+                    matches++;
+                    break;
+                }
+            }
+        }
+
+        const similarity = matches / Math.max(merchantWords.length, patternWords.length);
+        return similarity >= 0.5 ? similarity * 0.6 : 0; // Lower confidence for fuzzy matches
     }
 
     /**
@@ -1591,9 +1795,9 @@ export class RecommendationService {
                     cardId: rec.cardId,
                     rank: rec.rank,
                     score: rec.score,
-                    potentialSavings: isNaN(rec.potentialSavings) ? 0 : rec.potentialSavings,
-                    currentEarnings: isNaN(rec.currentEarnings) ? 0 : rec.currentEarnings,
-                    yearlyEstimate: isNaN(rec.yearlyEstimate) ? 0 : rec.yearlyEstimate,
+                    potentialSavings: isNaN(rec.potentialSavings || 0) ? 0 : (rec.potentialSavings || 0),
+                    currentEarnings: isNaN(rec.currentEarnings || 0) ? 0 : (rec.currentEarnings || 0),
+                    yearlyEstimate: isNaN(rec.yearlyEstimate || 0) ? 0 : (rec.yearlyEstimate || 0),
                     signupBonusValue: rec.signupBonusValue || null,
                     feeBreakeven: rec.feeBreakeven || null,
                     primaryReason: rec.primaryReason,

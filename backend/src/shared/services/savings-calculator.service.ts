@@ -11,7 +11,7 @@ export interface CardSavingsAnalysis {
     grossSavings: number; // Before annual fee
     annualFee: number;
     yearlyROI: number; // Return on investment percentage
-    monthsToBreakeven: number | null;
+    monthsToBreakeven: number | null; // Months needed to recover annual fee through extra cashback
     categoryBreakdown: CategorySavings[];
     signupBonusValue: number;
     totalFirstYearValue: number; // Including signup bonus
@@ -104,8 +104,10 @@ export class SavingsCalculatorService {
         const yearlyROI = annualFee > 0 ? (grossSavings / annualFee) * 100 :
             grossSavings > 0 ? Infinity : 0;
 
-        const monthsToBreakeven = annualFee > 0 && grossSavings > 0 ?
-            (annualFee / grossSavings) * 12 : null;
+        // Calculate spending breakeven - how much you need to spend to justify the annual fee
+        const feeBreakevenSpending = this.calculateFeeBreakevenSpending(
+            card, spendingPatterns, annualFee, totalPositiveSpend
+        );
 
         // Signup bonus calculation from additional benefits
         let signupBonusValue = 0;
@@ -151,7 +153,7 @@ export class SavingsCalculatorService {
             grossSavings,
             annualFee,
             yearlyROI,
-            monthsToBreakeven,
+            monthsToBreakeven: feeBreakevenSpending,
             categoryBreakdown,
             signupBonusValue,
             totalFirstYearValue
@@ -172,7 +174,7 @@ export class SavingsCalculatorService {
 
         // Determine earn rates
         const currentEarnRate = this.getCurrentEarnRate(baselineCard, pattern);
-        let cardEarnRate = card.baseRewardRate || this.DEFAULT_EARN_RATE;
+        let cardEarnRate = card.rewardStructure?.baseRewardRate || card.baseRewardRate || this.DEFAULT_EARN_RATE;
 
         // Use accelerated reward rate if found and applicable
         if (bestReward && this.isRewardApplicable(bestReward, pattern)) {
@@ -189,8 +191,26 @@ export class SavingsCalculatorService {
         const currentEarnings = pattern.totalSpent * (currentEarnRate / 100);
         const cardEarningsRaw = effectiveSpending * (cardEarnRate / 100);
 
-        // Convert points to cash value based on reward currency
-        const pointValue = await this.getPointValue(card.rewardCurrency || 'default');
+        // Convert points to cash value based on reward currency with better fallback logic
+        let rewardCurrency = card.rewardCurrency;
+
+        // If no reward currency is set, try to infer from rewardStructure
+        if (!rewardCurrency && card.rewardStructure?.rewardCurrency) {
+            rewardCurrency = card.rewardStructure.rewardCurrency;
+        }
+
+        // If still no currency, use the reward type to determine appropriate currency
+        if (!rewardCurrency && card.rewardStructure?.rewardType) {
+            if (card.rewardStructure.rewardType === 'cashback') {
+                rewardCurrency = 'statement_credit';
+            } else if (card.rewardStructure.rewardType === 'points') {
+                rewardCurrency = 'reward_points';
+            } else {
+                rewardCurrency = 'default';
+            }
+        }
+
+        const pointValue = await this.getPointValue(rewardCurrency || 'default');
 
         // Debug logging for calculations
         logger.info('Category savings calculation debug', {
@@ -254,9 +274,9 @@ export class SavingsCalculatorService {
             cardEarnings += baseEarnings;
         }
 
-        // Only show positive savings - if card earns less or equal, show 0 savings
+        // Calculate actual savings difference (can be negative if card is worse)
         const rawSavings = cardEarnings - currentEarnings;
-        const savings = Math.max(0, rawSavings);
+        const savings = rawSavings; // Show actual savings, even if negative
 
         // Debug final calculation
         logger.info('Final category savings calculation', {
@@ -311,44 +331,78 @@ export class SavingsCalculatorService {
     private calculateRewardMatchScore(reward: any, pattern: SpendingPattern): number {
         let score = 0;
 
-        // For brand-specific rewards, prioritize merchant pattern matching
-        if (reward.rewardCategory?.slug === 'brand-specific' || reward.rewardCategory?.name === 'Brand Specific') {
-            // For brand-specific rewards, merchant pattern match is the primary criterion
+        // For brand-specific rewards, they should only match if there's explicit merchant match
+        // BUT don't return early - let category matching also contribute to score
+        const isBrandSpecific = reward.rewardCategory?.slug === 'brand-specific' || reward.rewardCategory?.name === 'Brand Specific';
+        let brandSpecificPenalty = 0;
+
+        if (isBrandSpecific) {
             if (reward.merchantPatterns && Array.isArray(reward.merchantPatterns)) {
                 const merchantMatch = this.checkMerchantPatternMatch(reward.merchantPatterns, pattern);
                 if (merchantMatch > 0) {
                     score += merchantMatch * 100; // Very high score for brand-specific merchant matches
-                    return score; // Return early for brand-specific matches
+                } else {
+                    // Apply penalty for brand-specific without merchant match
+                    brandSpecificPenalty = 60; // Will be subtracted later
                 }
+            } else {
+                // Apply penalty for brand-specific without merchant patterns
+                brandSpecificPenalty = 60;
             }
-            // If no merchant match for brand-specific reward, don't match it
-            return 0;
         }
 
         // Direct category match using reward category
         if (reward.rewardCategory?.name === pattern.categoryName) {
             score += 100;
+
+            // Bonus for non-brand-specific category matches (better for general spending)
+            if (!isBrandSpecific) {
+                score += 20; // Prefer general category rewards over brand-specific
+            }
         }
 
         // Enhanced category matching for Indian categories
         if (reward.rewardCategory?.name && pattern.categoryName) {
             const categoryMatch = this.getIndianCategoryMatch(reward.rewardCategory.name, pattern.categoryName);
             score += categoryMatch;
+
+            // Additional bonus for non-brand-specific enhanced matches
+            if (categoryMatch > 0 && !isBrandSpecific) {
+                score += 15;
+            }
         }
 
-        // MCC code match (high priority)
+        // MCC code match (high priority) - Enhanced with flexible matching
         if (reward.rewardCategory?.mccCodes && Array.isArray(reward.rewardCategory.mccCodes)) {
-            const mccMatches = pattern.mccCodes.filter(code =>
+            let mccScore = 0;
+
+            // Exact MCC matches
+            const exactMatches = pattern.mccCodes.filter(code =>
                 reward.rewardCategory.mccCodes.includes(code)
             ).length;
-            score += mccMatches * 40;
+            mccScore += exactMatches * 40;
+
+            // Flexible MCC matching for similar categories
+            if (exactMatches === 0) {
+                for (const patternMcc of pattern.mccCodes) {
+                    for (const rewardMcc of reward.rewardCategory.mccCodes) {
+                        const flexScore = this.getMccSimilarityScore(patternMcc, rewardMcc);
+                        if (flexScore > 0) {
+                            mccScore += flexScore;
+                            break; // Only count best match per pattern MCC
+                        }
+                    }
+                }
+            }
+
+            score += mccScore;
         }
 
         // Merchant pattern matching for non-brand-specific rewards
-        if (reward.merchantPatterns && Array.isArray(reward.merchantPatterns)) {
+        if (!isBrandSpecific && reward.merchantPatterns && Array.isArray(reward.merchantPatterns)) {
             const merchantMatch = this.checkMerchantPatternMatch(reward.merchantPatterns, pattern);
             if (merchantMatch > 0) {
-                score += merchantMatch * 30; // Lower weight for non-brand-specific merchant matches
+                score += merchantMatch * 20; // Lower bonus for merchant matches on general rewards
             }
         }
 
@@ -356,6 +410,9 @@ export class SavingsCalculatorService {
         if (reward.rewardCategory?.slug === 'general' && pattern.categoryName === 'Other') {
             score += 20;
         }
+
+        // Apply brand-specific penalty if applicable
+        score = Math.max(0, score - brandSpecificPenalty);
 
         return score;
     }
@@ -372,14 +429,15 @@ export class SavingsCalculatorService {
 
         // Indian-specific mappings
         const mappings: Record<string, string[]> = {
-            'online shopping': ['e-commerce & online shopping', 'ecommerce', 'marketplace'],
+            'online shopping': ['e-commerce & online shopping', 'ecommerce', 'marketplace', 'online', 'retail shopping'],
             'dining & food': ['dining & food delivery', 'dining', 'food delivery'],
             'grocery': ['groceries & quick commerce', 'grocery', 'supermarkets'],
             'fuel & petrol': ['fuel & automotive', 'fuel', 'petrol'],
-            'travel & transportation': ['travel & tourism', 'transportation', 'travel'],
+            'travel & transportation': ['travel & tourism', 'transportation', 'travel', 'tourism'],
             'utilities & bills': ['utilities & digital services', 'utilities', 'bills'],
             'entertainment & movies': ['entertainment & ott', 'entertainment', 'movies'],
-            'brand specific': ['retail shopping', 'shopping', 'brand'],
+            'retail shopping': ['retail shopping', 'shopping', 'retail', 'stores', 'malls'],
+            'brand specific': ['brand'],
             'general spends': ['other', 'miscellaneous', 'general'],
         };
 
@@ -476,6 +534,11 @@ export class SavingsCalculatorService {
      * Calculate match score between pattern and merchant
      */
     private calculateMerchantMatchScore(pattern: string, merchant: string): number {
+        // Handle special patterns first
+        if (pattern === 'allonlinetransactions' || pattern === 'all_online_transactions') {
+            return this.isOnlineTransaction(merchant) ? 1.0 : 0;
+        }
+
         // Direct matches
         if (pattern === merchant) return 1.0;
 
@@ -533,6 +596,212 @@ export class SavingsCalculatorService {
         }
 
         return 0;
+    }
+
+    /**
+     * Calculate how many months needed to recover annual fee through extra cashback
+     */
+    private calculateFeeBreakevenSpending(
+        card: any,
+        spendingPatterns: SpendingPattern[],
+        annualFee: number,
+        totalSpending: number
+    ): number | null {
+        if (annualFee <= 0 || card.isLifetimeFree) {
+            return null; // No breakeven needed for free cards
+        }
+
+        // Calculate total extra cashback per statement period (month/quarter based on user data)
+        let totalExtraCashback = 0;
+
+        for (const pattern of spendingPatterns) {
+            if (pattern.totalSpent <= 0) continue;
+
+            // Baseline rate (what user currently gets - typically 1%)
+            const baselineRate = 1;
+
+            // Get card's rate for this category
+            const bestReward = this.findBestAcceleratedReward(card.acceleratedRewards || [], pattern);
+            const cardRate = bestReward ? bestReward.rewardRate : (card.rewardStructure?.baseRewardRate || 1);
+
+            // Calculate extra cashback for this category
+            const extraRate = Math.max(0, cardRate - baselineRate);
+            const extraCashback = (pattern.totalSpent * extraRate) / 100;
+            totalExtraCashback += extraCashback;
+        }
+
+        if (totalExtraCashback <= 0) {
+            return null; // No extra benefit to justify fee
+        }
+
+        // Convert to monthly extra cashback (assuming data represents monthly spending)
+        const monthlyExtraCashback = totalExtraCashback;
+
+        // Calculate months to recover annual fee
+        // Formula: Annual Fee ÷ Monthly Extra Cashback = Months to Break Even
+        const monthsToBreakeven = annualFee / monthlyExtraCashback;
+
+        return Math.round(monthsToBreakeven);
+    }
+
+    /**
+     * Determine if a transaction is online based on merchant name and patterns
+     */
+    private isOnlineTransaction(merchant: string): boolean {
+        const normalizedMerchant = this.normalizeMerchantName(merchant);
+
+        // Online indicators in merchant names
+        const onlineIndicators = [
+            // E-commerce platforms
+            'amazon', 'flipkart', 'myntra', 'ajio', 'nykaa', 'lenskart', 'zivame',
+            'tatacliq', 'meesho', 'paytmmall', 'shopclues', 'firstcry', 'pepperfry',
+
+            // Travel booking platforms
+            'makemytrip', 'goibibo', 'cleartrip', 'yatra', 'expedia', 'booking',
+            'agoda', 'ixigo', 'redbus', 'easemytrip', 'klook', 'airbnb',
+
+            // Food delivery & online services
+            'swiggy', 'zomato', 'uber', 'ola', 'dominos', 'pizzahut', 'kfc',
+            'mcdonalds', 'burgerking', 'subway', 'foodpanda',
+
+            // Digital services & streaming
+            'netflix', 'amazonprime', 'hotstar', 'spotify', 'gaana', 'jiosaavn',
+            'youtube', 'google', 'microsoft', 'adobe', 'zoom', 'canva',
+
+            // Payment gateways & fintech
+            'paytm', 'phonepe', 'googlepay', 'amazonpay', 'mobikwik', 'freecharge',
+            'paypal', 'razorpay', 'payu', 'billdesk', 'ccavenue',
+
+            // Online indicators in merchant descriptions
+            'online', 'ecommerce', 'digital', 'web', 'app', 'mobile',
+            'internet', 'portal', 'platform', 'marketplace',
+
+            // International online merchants (common in India)
+            'paypal', 'stripe', 'square', 'apple', 'microsoft', 'adobe',
+            'zoom', 'dropbox', 'github', 'atlassian', 'slack',
+
+            // Cryptocurrency & fintech
+            'coinbase', 'binance', 'wazirx', 'coindcx', 'zebpay',
+
+            // Online education & courses
+            'coursera', 'udemy', 'skillshare', 'masterclass', 'byjus',
+            'unacademy', 'vedantu', 'toppr', 'whitehatjr'
+        ];
+
+        // Geographic indicators (travel tech companies often have location indicators)
+        const onlineGeoIndicators = [
+            'singapore', 'hongkong', 'usa', 'uk', 'ireland', 'netherlands',
+            'techltd', 'pvtltd', 'inc', 'llc', 'ltd', 'corp', 'technologies'
+        ];
+
+        // Check for direct online indicators
+        for (const indicator of onlineIndicators) {
+            if (normalizedMerchant.includes(indicator)) {
+                return true;
+            }
+        }
+
+        // Check for geographic indicators suggesting online/tech companies
+        for (const geoIndicator of onlineGeoIndicators) {
+            if (normalizedMerchant.includes(geoIndicator)) {
+                return true;
+            }
+        }
+
+        // Additional heuristics for online transactions
+        // Companies with "tech", "digital", "online" in name
+        if (normalizedMerchant.includes('tech') ||
+            normalizedMerchant.includes('digital') ||
+            normalizedMerchant.includes('online') ||
+            normalizedMerchant.includes('ecom') ||
+            normalizedMerchant.includes('cyber') ||
+            normalizedMerchant.includes('web') ||
+            normalizedMerchant.includes('app') ||
+            normalizedMerchant.includes('mobile')) {
+            return true;
+        }
+
+        // If merchant name contains common online patterns
+        if (normalizedMerchant.includes('pvtltd') ||
+            normalizedMerchant.includes('pvt') ||
+            normalizedMerchant.includes('ltd') ||
+            normalizedMerchant.includes('inc') ||
+            normalizedMerchant.includes('corp')) {
+            // These could be online, but let's be more specific
+            // Only consider as online if they also have tech/digital indicators
+            return normalizedMerchant.includes('solutions') ||
+                normalizedMerchant.includes('services') ||
+                normalizedMerchant.includes('systems') ||
+                normalizedMerchant.includes('software');
+        }
+
+        return false;
+    }
+
+    /**
+     * Calculate similarity score between MCC codes for flexible matching
+     */
+    private getMccSimilarityScore(patternMcc: string, rewardMcc: string): number {
+        // MCC code groupings for similar merchant types
+        const mccGroups: Record<string, string[]> = {
+            // Retail & Shopping (53xx range)
+            'retail_shopping': ['5300', '5309', '5310', '5311', '5331', '5399', '5651', '5732', '5941', '5945', '5977'],
+
+            // Travel & Transportation (4xxx, 7xxx range)
+            'travel': ['3000', '4112', '4121', '4131', '4722', '7011', '7012', '7032', '7033'],
+
+            // Dining & Food (58xx range)
+            'dining': ['5812', '5813', '5814'],
+
+            // Grocery & Supermarkets (54xx range)
+            'grocery': ['5411', '5422', '5441', '5499'],
+
+            // Fuel & Gas (55xx range)
+            'fuel': ['5541', '5542'],
+
+            // Utilities & Bills (48xx, 49xx range)
+            'utilities': ['4814', '4815', '4816', '4899', '4900'],
+
+            // Entertainment (78xx, 58xx range)
+            'entertainment': ['7832', '7841', '5815', '5816', '5817'],
+
+            // Healthcare (80xx range)
+            'healthcare': ['8011', '8021', '8031', '8041', '8049', '8050', '8062', '8071', '8099'],
+
+            // Financial Services (60xx range)
+            'financial': ['6010', '6011', '6012', '6050', '6051'],
+
+            // Government & Taxes (93xx range)
+            'government': ['9311', '9399', '9401', '9402', '9403']
+        };
+
+        // Find which groups each MCC belongs to
+        let patternGroup = '';
+        let rewardGroup = '';
+
+        for (const [group, mccs] of Object.entries(mccGroups)) {
+            if (mccs.includes(patternMcc)) {
+                patternGroup = group;
+            }
+            if (mccs.includes(rewardMcc)) {
+                rewardGroup = group;
+            }
+        }
+
+        // If both MCCs are in the same group, give a similarity score
+        if (patternGroup && rewardGroup && patternGroup === rewardGroup) {
+            return 25; // Moderate score for same-group MCCs
+        }
+
+        // Check if MCCs are in adjacent ranges (might be related)
+        const patternPrefix = patternMcc.substring(0, 2);
+        const rewardPrefix = rewardMcc.substring(0, 2);
+
+        if (patternPrefix === rewardPrefix) {
+            return 10; // Small bonus for same prefix
+        }
+
+        return 0; // No similarity
     }
 
     /**

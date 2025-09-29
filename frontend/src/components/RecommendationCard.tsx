@@ -12,7 +12,6 @@ import {
   Star, 
   CreditCard, 
   DollarSign, 
-  Calendar,
   Shield,
   Award,
   Info,
@@ -70,53 +69,53 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
   return (
     <Card className="w-full overflow-hidden transition-all duration-300 hover:shadow-lg border-l-4 border-l-blue-500">
       {/* Header */}
-      <div className="p-6 pb-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start space-x-4">
+      <div className="p-4 sm:p-6 pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between space-y-4 sm:space-y-0">
+          <div className="flex items-start space-x-3 sm:space-x-4 flex-1">
             {/* Rank Badge */}
             <div className="flex-shrink-0">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm sm:text-lg">
                 #{recommendation.rank}
               </div>
             </div>
 
             {/* Card Info */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center space-x-2 mb-2">
-                <h3 className="text-xl font-bold text-gray-900 truncate">
+              <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2 mb-2">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
                   {card.name}
                 </h3>
                 {card.isLifetimeFree && (
-                  <Badge variant="secondary" className="bg-green-100 text-green-800">
+                  <Badge variant="secondary" className="bg-green-100 text-green-800 self-start sm:self-auto">
                     <Zap className="w-3 h-3 mr-1" />
                     Lifetime Free
                   </Badge>
                 )}
               </div>
               
-              <div className="flex items-center space-x-4 text-sm text-gray-600 mb-2">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600 mb-2">
                 <span className="flex items-center">
-                  <CreditCard className="w-4 h-4 mr-1" />
+                  <CreditCard className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                   {card.issuer.name}
                 </span>
                 <span className="flex items-center">
-                  <Shield className="w-4 h-4 mr-1" />
+                  <Shield className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                   {card.network.name}
                 </span>
                 <span className="flex items-center">
-                  <Star className="w-4 h-4 mr-1" />
+                  <Star className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                   {card.customerSatisfactionScore.toFixed(1)}/5
                 </span>
               </div>
 
-              <p className="text-sm text-gray-700 mb-3">
+              <p className="text-sm text-gray-700 mb-3 leading-relaxed">
                 {recommendation.primaryReason}
               </p>
             </div>
           </div>
 
           {/* Score */}
-          <div className="flex-shrink-0 text-right">
+          <div className="flex-shrink-0 self-start sm:text-right">
             <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getScoreColor(recommendation.score)}`}>
               <Target className="w-4 h-4 mr-1" />
               {recommendation.score.toFixed(0)}
@@ -128,66 +127,59 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
         </div>
 
         {/* Key Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-          <div className="text-center p-3 bg-green-50 rounded-lg">
-            <div className="flex items-center justify-center mb-1">
-              <TrendingUp className="w-4 h-4 text-green-600" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+          <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border border-green-200">
+            <div className="flex items-center justify-center mb-2">
+              <DollarSign className="w-5 h-5 text-green-600" />
             </div>
-            <div className="text-lg font-bold text-green-700">
-              {formatCurrency(recommendation.annualSavings || recommendation.potentialSavings)}
+            <div className="text-xl font-bold text-green-700">
+              {formatCurrency(recommendation.estimatedAnnualCashback || recommendation.yearlyEstimate || 0)}
             </div>
-            <div className="text-xs text-green-600">Annual Savings</div>
-            <div className="text-[10px] text-green-500 mt-1">
-              Statement: {formatCurrency(recommendation.statementSavings || 0)}
-            </div>
-          </div>
-
-          <div className="text-center p-3 bg-blue-50 rounded-lg">
-            <div className="flex items-center justify-center mb-1">
-              <DollarSign className="w-4 h-4 text-blue-600" />
-            </div>
-            <div className="text-lg font-bold text-blue-700">
-              {formatCurrency(recommendation.annualEarnings || recommendation.yearlyEstimate)}
-            </div>
-            <div className="text-xs text-blue-600">Annual Earnings</div>
-            <div className="text-[10px] text-blue-500 mt-1">
-              Statement: {formatCurrency(recommendation.statementEarnings || 0)}
+            <div className="text-sm text-green-600 font-medium">Estimated Annual Cashback</div>
+            <div className="text-xs text-green-500 mt-1">
+              Based on your spending patterns
             </div>
           </div>
 
-          <div className="text-center p-3 bg-purple-50 rounded-lg">
-            <div className="flex items-center justify-center mb-1">
-              <Award className="w-4 h-4 text-purple-600" />
+          <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border border-purple-200">
+            <div className="flex items-center justify-center mb-2">
+              <Award className="w-5 h-5 text-purple-600" />
             </div>
-            <div className="text-lg font-bold text-purple-700">
-              {recommendation.signupBonusValue ? formatCurrency(recommendation.signupBonusValue) : 'N/A'}
+            <div className="text-xl font-bold text-purple-700">
+              {recommendation.signupBonusValue ? formatCurrency(recommendation.signupBonusValue) : 'None'}
             </div>
-            <div className="text-xs text-purple-600">Welcome Bonus</div>
+            <div className="text-sm text-purple-600 font-medium">Welcome Bonus</div>
+            <div className="text-xs text-purple-500 mt-1">
+              {recommendation.signupBonusDescription || 'One-time benefit'}
+            </div>
           </div>
 
-          <div className="text-center p-3 bg-orange-50 rounded-lg">
-            <div className="flex items-center justify-center mb-1">
-              <Calendar className="w-4 h-4 text-orange-600" />
+          <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+            <div className="flex items-center justify-center mb-2">
+              <Shield className="w-5 h-5 text-blue-600" />
             </div>
-            <div className="text-lg font-bold text-orange-700">
-              {recommendation.feeBreakeven ? `${recommendation.feeBreakeven}m` : 'N/A'}
+            <div className="text-xl font-bold text-blue-700">
+              {card.isLifetimeFree ? 'FREE' : formatCurrency(card.feeStructure.annualFee)}
             </div>
-            <div className="text-xs text-orange-600">Fee Breakeven</div>
+            <div className="text-sm text-blue-600 font-medium">Annual Fee</div>
+            <div className="text-xs text-blue-500 mt-1">
+              {card.isLifetimeFree ? 'Lifetime free card' : 'Yearly charge'}
+            </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-between mt-4">
-          <div className="flex space-x-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={onToggleExpand}
-              className="flex items-center"
+              className="flex items-center text-xs sm:text-sm"
             >
-              <Info className="w-4 h-4 mr-1" />
+              <Info className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
               {isExpanded ? 'Less Details' : 'More Details'}
-              {isExpanded ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
+              {isExpanded ? <ChevronUp className="w-3 h-3 sm:w-4 sm:h-4 ml-1" /> : <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4 ml-1" />}
             </Button>
             
             {showComparison && onCompare && (
@@ -195,14 +187,15 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => onCompare(card.id)}
+                className="text-xs sm:text-sm"
               >
-                <BarChart3 className="w-4 h-4 mr-1" />
+                <BarChart3 className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                 Compare
               </Button>
             )}
           </div>
 
-          <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+          <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 w-full sm:w-auto">
             Apply Now
           </Button>
         </div>
@@ -212,14 +205,14 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
       {isExpanded && (
         <div className="border-t bg-gray-50">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-4 bg-white border-b">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="breakdown">Breakdown</TabsTrigger>
-              <TabsTrigger value="features">Features</TabsTrigger>
-              <TabsTrigger value="eligibility">Eligibility</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 bg-white border-b text-xs sm:text-sm">
+              <TabsTrigger value="overview" className="px-2 py-1 sm:px-3 sm:py-2">Overview</TabsTrigger>
+              <TabsTrigger value="breakdown" className="px-2 py-1 sm:px-3 sm:py-2">Breakdown</TabsTrigger>
+              <TabsTrigger value="features" className="px-2 py-1 sm:px-3 sm:py-2">Features</TabsTrigger>
+              <TabsTrigger value="eligibility" className="px-2 py-1 sm:px-3 sm:py-2">Eligibility</TabsTrigger>
             </TabsList>
 
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <TabsContent value="overview" className="mt-0">
                 <div className="grid md:grid-cols-2 gap-6">
                   {/* Pros */}

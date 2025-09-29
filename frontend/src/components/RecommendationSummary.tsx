@@ -35,7 +35,7 @@ export const RecommendationSummary: React.FC<RecommendationSummaryProps> = ({
     }).format(amount);
   };
 
-  const savingsRate = totalSpending > 0 ? (summary.potentialSavings / totalSpending) * 100 : 0;
+  const savingsRate = totalSpending > 0 ? ((summary.totalEstimatedValue || summary.potentialSavings || 0) / totalSpending) * 100 : 0;
   const confidenceLevel = summary.confidenceLevel.toLowerCase();
   
   const getConfidenceColor = (level: string) => {
@@ -57,7 +57,7 @@ export const RecommendationSummary: React.FC<RecommendationSummaryProps> = ({
     return { level: 'Limited', color: 'text-gray-600', icon: '📊' };
   };
 
-  const impact = getImpactLevel(summary.potentialSavings, totalSpending);
+  const impact = getImpactLevel(summary.totalEstimatedValue || summary.potentialSavings || 0, totalSpending);
 
   return (
     <Card className={`overflow-hidden ${className}`}>
@@ -112,7 +112,7 @@ export const RecommendationSummary: React.FC<RecommendationSummaryProps> = ({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-green-600">
-                {formatCurrency(topRecommendation.potentialSavings)}
+                {formatCurrency(topRecommendation.estimatedAnnualCashback || topRecommendation.potentialSavings || 0)}
               </div>
               <div className="text-sm text-gray-600">Annual Savings</div>
             </div>
@@ -148,7 +148,7 @@ export const RecommendationSummary: React.FC<RecommendationSummaryProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Annual Savings Potential</span>
                 <span className="font-bold text-green-600">
-                  {formatCurrency(summary.potentialSavings)}
+                  {formatCurrency(summary.totalEstimatedValue || summary.potentialSavings || 0)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -160,7 +160,7 @@ export const RecommendationSummary: React.FC<RecommendationSummaryProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Monthly Benefit</span>
                 <span className="font-bold text-purple-600">
-                  {formatCurrency(summary.potentialSavings / 12)}
+                  {formatCurrency((summary.totalEstimatedValue || summary.potentialSavings || 0) / 12)}
                 </span>
               </div>
             </div>

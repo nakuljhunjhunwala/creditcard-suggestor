@@ -7,6 +7,7 @@ import { categorizationService } from './categorization.service';
 import { recommendationService } from './recommendation.service';
 import { logger } from '@/shared/utils/logger.util';
 import { env } from '@/shared/config/env.config';
+import { SessionService } from '@/modules/session/session.service';
 
 /**
  * Background Jobs Service
@@ -64,6 +65,7 @@ export class BackgroundJobsService {
 
     private workers: Map<string, Worker> = new Map();
     private isRunning = false;
+    private sessionService!: SessionService;
     private processingStats = {
         totalJobsProcessed: 0,
         totalProcessingTime: 0,
@@ -83,6 +85,9 @@ export class BackgroundJobsService {
             maxConcurrentJobs: this.MAX_CONCURRENT_JOBS,
             jobTimeoutMs: this.JOB_TIMEOUT_MS,
         });
+
+        // Initialize session service for cleanup tasks
+        this.sessionService = new SessionService(prisma);
 
         // Setup graceful shutdown
         process.on('SIGINT', () => this.shutdown());
@@ -499,11 +504,13 @@ export class BackgroundJobsService {
     }
 
     /**
-     * Start cleanup task for stuck jobs
+     * Start cleanup task for stuck jobs and expired sessions
      */
     private startCleanupTask(): void {
         const cleanupInterval = 5 * 60 * 1000; // 5 minutes
+        const sessionCleanupInterval = 30 * 60 * 1000; // 30 minutes
 
+        // Cleanup stuck jobs every 5 minutes
         setInterval(async () => {
             try {
                 await this.cleanupStuckJobs();
@@ -512,7 +519,19 @@ export class BackgroundJobsService {
             }
         }, cleanupInterval);
 
-        logger.info('Started job cleanup task', { intervalMs: cleanupInterval });
+        // Cleanup expired sessions every 30 minutes
+        setInterval(async () => {
+            try {
+                await this.cleanupExpiredSessions();
+            } catch (error) {
+                logger.error('Session cleanup task failed', error);
+            }
+        }, sessionCleanupInterval);
+
+        logger.info('Started cleanup tasks', {
+            jobCleanupIntervalMs: cleanupInterval,
+            sessionCleanupIntervalMs: sessionCleanupInterval
+        });
     }
 
     /**
@@ -520,6 +539,9 @@ export class BackgroundJobsService {
      */
     private async cleanupStuckJobs(): Promise<void> {
         try {
+            // Check if Prisma is connected, if not, reconnect
+            await this.ensureDatabaseConnection();
+
             const timeoutThreshold = new Date(Date.now() - this.JOB_TIMEOUT_MS);
 
             // Find jobs that are processing but haven't updated in a while
@@ -543,9 +565,105 @@ export class BackgroundJobsService {
                         completedAt: new Date(),
                     },
                 });
+
+                logger.info(`Successfully marked ${stuckJobs.length} stuck jobs as failed`);
+            } else {
+                logger.debug('No stuck jobs found during cleanup');
             }
         } catch (error) {
-            logger.error('Failed to cleanup stuck jobs', error);
+            logger.error('Failed to cleanup stuck jobs', {
+                error: error instanceof Error ? {
+                    name: error.name,
+                    message: error.message,
+                    code: (error as any).code
+                } : error
+            });
+
+            // If it's a connection error, try to reconnect
+            if (this.isDatabaseConnectionError(error)) {
+                logger.warn('Database connection error detected, attempting to reconnect...');
+                await this.reconnectDatabase();
+            }
+        }
+    }
+
+    /**
+     * Ensure database connection is active
+     */
+    private async ensureDatabaseConnection(): Promise<void> {
+        try {
+            // Simple query to test connection
+            await prisma.$queryRaw`SELECT 1`;
+        } catch (error) {
+            logger.warn('Database connection test failed, reconnecting...', { error });
+            await this.reconnectDatabase();
+        }
+    }
+
+    /**
+     * Reconnect to database
+     */
+    private async reconnectDatabase(): Promise<void> {
+        try {
+            await prisma.$disconnect();
+            await prisma.$connect();
+            logger.info('Database reconnection successful');
+        } catch (error) {
+            logger.error('Database reconnection failed', { error });
+            throw error;
+        }
+    }
+
+    /**
+     * Check if error is related to database connection
+     */
+    private isDatabaseConnectionError(error: any): boolean {
+        if (!error) return false;
+
+        const connectionErrorCodes = [
+            'P1017', // Server has closed the connection
+            'P1001', // Can't reach database server
+            'P1002', // The database server was reached but timed out
+            'P1008', // Operations timed out
+            'P1009', // Database does not exist
+            'P1010', // User was denied access
+        ];
+
+        return connectionErrorCodes.includes(error.code) ||
+            error.message?.includes('Server has closed the connection') ||
+            error.message?.includes('Connection closed') ||
+            error.message?.includes('Connection terminated');
+    }
+
+    /**
+     * Clean up expired sessions and their related data
+     */
+    private async cleanupExpiredSessions(): Promise<void> {
+        try {
+            // Check if Prisma is connected, if not, reconnect
+            await this.ensureDatabaseConnection();
+
+            const cleanedCount = await this.sessionService.cleanupExpiredSessions();
+
+            if (cleanedCount > 0) {
+                logger.info(`Successfully cleaned up ${cleanedCount} expired sessions`);
+            } else {
+                logger.debug('No expired sessions found during cleanup');
+            }
+        } catch (error) {
+            logger.error('Failed to cleanup expired sessions', {
+                error: error instanceof Error ? {
+                    name: error.name,
+                    message: error.message,
+                    code: (error as any).code
+                } : error
+            });
+
+            // If it's a connection error, try to reconnect
+            if (this.isDatabaseConnectionError(error)) {
+                logger.warn('Database connection error detected during session cleanup, attempting to reconnect...');
+                await this.reconnectDatabase();
+            }
         }
     }
 }

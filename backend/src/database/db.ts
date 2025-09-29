@@ -15,7 +15,7 @@ const getDatabaseUrl = () => {
 
   // Add connection pool parameters to prevent exhaustion
   const url = new URL(baseUrl);
-  url.searchParams.set('connection_limit', '5'); // Limit concurrent connections
+  url.searchParams.set('connection_limit', '6'); // Limit concurrent connections
   url.searchParams.set('pool_timeout', '10'); // Connection timeout in seconds
 
   return url.toString();
@@ -24,7 +24,7 @@ const getDatabaseUrl = () => {
 export const prisma =
   global.prisma ??
   new PrismaClient({
-    log: ['query', 'info', 'warn', 'error'],
+    // log: ['query', 'info', 'warn', 'error'],
     datasources: {
       db: {
         url: getDatabaseUrl(),

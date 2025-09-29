@@ -38,6 +38,46 @@ const logFormat = combine(
   }),
 );
 
+const fileFormat = combine(
+  timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  printf((info) => {
+    const requestId = httpContext.get('requestId');
+    const logObj = {
+      timestamp: info.timestamp,
+      requestId: requestId ?? '-',
+      service: info.service,
+      ...info // Include all other metadata
+    };
+
+    // Remove duplicate fields to avoid redundancy
+    delete logObj.timestamp;
+    const finalLog = {
+      timestamp: info.timestamp,
+      level: info.level,
+      requestId: requestId ?? '-',
+      message: info.message,
+      ...Object.fromEntries(
+        Object.entries(logObj).filter(([key]) =>
+          !['timestamp', 'level', 'message', 'requestId'].includes(key)
+        )
+      )
+    };
+
+    try {
+      return JSON.stringify(finalLog);
+    } catch (error) {
+      return JSON.stringify({
+        timestamp: info.timestamp,
+        level: info.level,
+        requestId: requestId ?? '-',
+        message: info.message,
+        error: 'Failed to stringify log data'
+      });
+    }
+  })
+);
+
+
 const transports: winston.transport[] = [
   new winston.transports.Console({
     level: 'info',
@@ -84,9 +124,10 @@ export const logger = winston.createLogger({
   exitOnError: false,
 });
 
+// include the logFormat in the file transport with all that json metadata also included in combined.log currently no json is included
 if (env.NODE_ENV !== 'production') {
   logger.add(
     new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
   );
-  logger.add(new winston.transports.File({ filename: 'logs/combined.log' }));
+  logger.add(new winston.transports.File({ filename: 'logs/combined.log', format: fileFormat }));
 }

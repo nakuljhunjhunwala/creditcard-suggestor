@@ -260,7 +260,7 @@ export function ResultsPage() {
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-bold text-green-600">
-                            {formatCurrency(rec.potentialSavings)}
+                            {formatCurrency(rec.potentialSavings || 0)}
                           </p>
                           <p className="text-sm text-muted-foreground">Potential Savings</p>
                         </div>
@@ -273,7 +273,7 @@ export function ResultsPage() {
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Yearly Estimate</p>
-                          <p className="font-medium">{formatCurrency(rec.yearlyEstimate)}</p>
+                          <p className="font-medium">{formatCurrency(rec.yearlyEstimate || 0)}</p>
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Confidence</p>

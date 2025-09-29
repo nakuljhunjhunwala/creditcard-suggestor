@@ -80,27 +80,33 @@ export interface CreditCardRecommendation {
     rank: number;
     score: number;
 
-    // Statement period (uploaded data timeframe)
-    statementSavings: number;
-    statementEarnings: number;
+    // Simplified earnings - what the user will earn with this card
+    estimatedAnnualCashback: number;  // Primary metric - annual cashback/rewards value
 
-    // Annual projected (extrapolated to 12 months)
-    annualSavings: number;
-    annualEarnings: number;
-
-    // Legacy fields (backwards compatibility)
-    potentialSavings: number;  // Same as annualSavings
-    currentEarnings: number;
-    yearlyEstimate: number;    // Same as annualEarnings
-
+    // Welcome bonus details
     signupBonusValue?: number;
-    feeBreakeven?: number;
+    signupBonusDescription?: string;
+
+    // Card recommendation details
     primaryReason: string;
     pros: string[];
     cons: string[];
     benefitBreakdown: BenefitBreakdown[];
     confidenceScore: number;
+
+    // Optional detailed breakdown
     scoreBreakdown?: ScoreBreakdown;
+
+    // Legacy fields (backwards compatibility - will be removed)
+    potentialSavings?: number;
+    currentEarnings?: number;
+    yearlyEstimate?: number;
+    statementSavings?: number;
+    statementEarnings?: number;
+    annualSavings?: number;
+    annualEarnings?: number;
+    feeBreakeven?: number;
+
     card: EnhancedCreditCard;
 }
 
@@ -270,10 +276,13 @@ export interface SpendingPattern {
 
 export interface RecommendationSummary {
     topRecommendation: string;
-    potentialSavings: number;
+    totalEstimatedValue: number;  // Total estimated value across all recommendations
     averageScore: number;
     categoriesAnalyzed: number;
     confidenceLevel: string;
+
+    // Legacy field (backwards compatibility)
+    potentialSavings?: number;
 }
 
 export interface RecommendationResponse {
