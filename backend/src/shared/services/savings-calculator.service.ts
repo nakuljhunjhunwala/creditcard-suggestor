@@ -5,27 +5,21 @@ import { logger } from '../utils/logger.util';
 
 export interface CardSavingsAnalysis {
     cardId: string;
-    totalCurrentEarnings: number;
-    totalPotentialEarnings: number;
-    netSavings: number; // After annual fee
-    grossSavings: number; // Before annual fee
-    annualFee: number;
-    yearlyROI: number; // Return on investment percentage
-    monthsToBreakeven: number | null; // Months needed to recover annual fee through extra cashback
+    // Statement period earnings only (no baseline subtraction, no annualization)
+    statementPeriodEarnings: number; // Gross earnings for the statement period
     categoryBreakdown: CategorySavings[];
     signupBonusValue: number;
-    totalFirstYearValue: number; // Including signup bonus
+    joiningFee: number;
+    annualFee: number;
 }
 
 export interface CategorySavings {
     categoryName: string;
     spentAmount: number;
-    currentEarnRate: number;
     cardEarnRate: number;
-    currentEarnings: number;
-    cardEarnings: number;
-    savings: number;
+    cardEarnings: number; // Gross earnings for this category in statement period
     percentageOfTotalSpend: number;
+    monthlyCap?: number; // Monthly capping limit for this category
 }
 
 export interface BenefitMatch {
@@ -37,26 +31,20 @@ export interface BenefitMatch {
 }
 
 /**
- * Comprehensive savings calculator for credit card recommendations
- * This service calculates actual savings potential by comparing card benefits
- * with user spending patterns, handling all edge cases
+ * Simplified savings calculator for credit card recommendations
+ * This service calculates gross earnings for the statement period only
+ * No baseline subtraction, no annualization
  */
 export class SavingsCalculatorService {
-    // Baseline earning rates for comparison
-    private readonly BASELINE_CASHBACK = 1.0; // 1% baseline
-    private readonly DEFAULT_EARN_RATE = 1.0;
-
-    // Point values are now loaded from database configuration
-
     /**
-     * Calculate comprehensive savings analysis for a card
+     * Calculate statement period earnings for a card
      */
     async calculateCardSavings(
         card: any,
         spendingPatterns: SpendingPattern[],
         baselineCard?: any
     ): Promise<CardSavingsAnalysis> {
-        // Filter out negative amounts (credits/refunds) for savings calculation
+        // Filter out negative amounts (credits/refunds)
         const positiveSpendingPatterns = spendingPatterns.filter(
             pattern => pattern.totalSpent > 0
         );
@@ -67,47 +55,29 @@ export class SavingsCalculatorService {
 
         if (totalPositiveSpend === 0) {
             // Fallback for edge case with no positive spending
-            return this.createEmptySavingsAnalysis(card.id, Number(card.annualFee || 0));
+            return this.createEmptySavingsAnalysis(card.id,
+                Number(card.feeStructure?.joiningFee || 0),
+                Number(card.feeStructure?.annualFee || 0));
         }
 
-        // Calculate category-wise savings
+        // Calculate category-wise earnings
         const categoryBreakdown: CategorySavings[] = [];
-        let totalCurrentEarnings = 0;
         let totalCardEarnings = 0;
 
         for (const pattern of positiveSpendingPatterns) {
             const categorySavings = await this.calculateCategorySavings(
                 card,
                 pattern,
-                totalPositiveSpend,
-                baselineCard
+                totalPositiveSpend
             );
 
             categoryBreakdown.push(categorySavings);
-            totalCurrentEarnings += categorySavings.currentEarnings;
             totalCardEarnings += categorySavings.cardEarnings;
         }
 
-        // Calculate actual positive savings (excluding negative differences)
-        const totalActualSavings = categoryBreakdown.reduce((sum, breakdown) => sum + breakdown.savings, 0);
-
-        // Handle annual fee from new structure
+        // Handle fees from new structure
+        const joiningFee = Number(card.feeStructure?.joiningFee || 0);
         const annualFee = Number(card.feeStructure?.annualFee || card.annualFee || 0);
-        // Use actual positive savings instead of raw difference
-        const grossSavings = totalActualSavings;
-
-        // NET SAVINGS EXCLUDES ANNUAL FEE (as per user requirement)
-        // This focuses on reward earning potential rather than fee impact
-        const netSavings = grossSavings;
-
-        // Calculate ROI and breakeven for informational purposes only
-        const yearlyROI = annualFee > 0 ? (grossSavings / annualFee) * 100 :
-            grossSavings > 0 ? Infinity : 0;
-
-        // Calculate spending breakeven - how much you need to spend to justify the annual fee
-        const feeBreakevenSpending = this.calculateFeeBreakevenSpending(
-            card, spendingPatterns, annualFee, totalPositiveSpend
-        );
 
         // Signup bonus calculation from additional benefits
         let signupBonusValue = 0;
@@ -126,70 +96,60 @@ export class SavingsCalculatorService {
             signupBonusValue = Number(card.signupBonus) * pointValueMultiplier;
         }
 
-        // First year value includes signup bonus but excludes annual fee impact on net savings
-        const totalFirstYearValue = grossSavings + signupBonusValue;
-
-        // Debug logging for card-level savings
-        logger.info('Card savings calculation debug', {
+        // Debug logging for card-level earnings
+        logger.info('Card earnings calculation debug', {
             cardId: card.id,
             cardName: card.name,
             totalPositiveSpend,
-            totalCurrentEarnings,
             totalCardEarnings,
-            grossSavings,
+            joiningFee,
             annualFee,
-            netSavings,
             signupBonusValue,
-            totalFirstYearValue,
             isLifetimeFree: card.isLifetimeFree,
             categoryBreakdownCount: categoryBreakdown.length
         });
 
         return {
             cardId: card.id,
-            totalCurrentEarnings,
-            totalPotentialEarnings: totalCardEarnings,
-            netSavings,
-            grossSavings,
-            annualFee,
-            yearlyROI,
-            monthsToBreakeven: feeBreakevenSpending,
+            statementPeriodEarnings: totalCardEarnings,
             categoryBreakdown,
             signupBonusValue,
-            totalFirstYearValue
+            joiningFee,
+            annualFee
         };
     }
 
     /**
-     * Calculate savings for a specific category using new accelerated rewards structure
+     * Calculate earnings for a specific category using accelerated rewards structure
      */
     private async calculateCategorySavings(
         card: any,
         pattern: SpendingPattern,
-        totalSpend: number,
-        baselineCard?: any
+        totalSpend: number
     ): Promise<CategorySavings> {
         // Find best matching accelerated reward for this category
         const bestReward = this.findBestAcceleratedReward(card.acceleratedRewards || [], pattern);
 
-        // Determine earn rates
-        const currentEarnRate = this.getCurrentEarnRate(baselineCard, pattern);
-        let cardEarnRate = card.rewardStructure?.baseRewardRate || card.baseRewardRate || this.DEFAULT_EARN_RATE;
+        // Determine card earn rate
+        let cardEarnRate = card.rewardStructure?.baseRewardRate || card.baseRewardRate || 1.0;
 
         // Use accelerated reward rate if found and applicable
         if (bestReward && this.isRewardApplicable(bestReward, pattern)) {
             cardEarnRate = bestReward.rewardRate;
         }
 
-        // Apply capping if exists
-        let effectiveSpending = pattern.totalSpent;
-        if (bestReward?.cappingLimit && bestReward.cappingPeriod) {
-            effectiveSpending = Math.min(pattern.totalSpent, bestReward.cappingLimit);
-        }
+        // Calculate uncapped earnings first
+        const uncappedEarningsRaw = pattern.totalSpent * (cardEarnRate / 100);
 
-        // Calculate earnings with point value conversion
-        const currentEarnings = pattern.totalSpent * (currentEarnRate / 100);
-        const cardEarningsRaw = effectiveSpending * (cardEarnRate / 100);
+        // Apply capping to EARNINGS (not spending)
+        let monthlyCap: number | undefined = undefined;
+        let cardEarningsRaw = uncappedEarningsRaw;
+
+        if (bestReward?.cappingLimit && bestReward.cappingPeriod) {
+            monthlyCap = bestReward.cappingLimit;
+            // Cap is applied to the EARNINGS amount, not the spending
+            cardEarningsRaw = Math.min(uncappedEarningsRaw, bestReward.cappingLimit);
+        }
 
         // Convert points to cash value based on reward currency with better fallback logic
         let rewardCurrency = card.rewardCurrency;
@@ -212,30 +172,6 @@ export class SavingsCalculatorService {
 
         const pointValue = await this.getPointValue(rewardCurrency || 'default');
 
-        // Debug logging for calculations
-        logger.info('Category savings calculation debug', {
-            cardId: card.id,
-            categoryName: pattern.categoryName,
-            totalSpent: pattern.totalSpent,
-            effectiveSpending,
-            currentEarnRate,
-            cardEarnRate,
-            currentEarnings,
-            cardEarningsRaw,
-            pointValue,
-            rewardCurrency: card.rewardCurrency,
-            merchants: pattern.merchants,
-            bestReward: bestReward ? {
-                categoryId: bestReward.categoryId,
-                rewardRate: bestReward.rewardRate,
-                merchantPatterns: bestReward.merchantPatterns,
-                description: bestReward.description,
-                cappingLimit: bestReward.cappingLimit,
-                cappingPeriod: bestReward.cappingPeriod
-            } : null,
-            isRewardApplicable: bestReward ? this.isRewardApplicable(bestReward, pattern) : false
-        });
-
         // Safety check for NaN values
         if (isNaN(pointValue) || pointValue <= 0) {
             logger.warn(`Invalid point value for currency ${card.rewardCurrency}, using fallback`, {
@@ -246,59 +182,26 @@ export class SavingsCalculatorService {
             const fallbackPointValue = 0.25;
             let cardEarnings = cardEarningsRaw * fallbackPointValue;
 
-            // Add base rate earnings for spending above cap
-            if (effectiveSpending < pattern.totalSpent) {
-                const baseEarnings = (pattern.totalSpent - effectiveSpending) * (card.baseRewardRate / 100) * fallbackPointValue;
-                cardEarnings += baseEarnings;
-            }
-
-            const savings = cardEarnings - currentEarnings;
-
             return {
                 categoryName: pattern.categoryName,
                 spentAmount: pattern.totalSpent,
-                currentEarnRate,
                 cardEarnRate,
-                currentEarnings: isNaN(currentEarnings) ? 0 : currentEarnings,
                 cardEarnings: isNaN(cardEarnings) ? 0 : cardEarnings,
-                savings: isNaN(savings) ? 0 : savings,
-                percentageOfTotalSpend: (pattern.totalSpent / totalSpend) * 100
+                percentageOfTotalSpend: (pattern.totalSpent / totalSpend) * 100,
+                monthlyCap
             };
         }
 
+        // Convert earnings to dollar value based on point value
         let cardEarnings = cardEarningsRaw * pointValue;
-
-        // Add base rate earnings for spending above cap
-        if (effectiveSpending < pattern.totalSpent) {
-            const baseEarnings = (pattern.totalSpent - effectiveSpending) * (card.baseRewardRate / 100) * pointValue;
-            cardEarnings += baseEarnings;
-        }
-
-        // Calculate actual savings difference (can be negative if card is worse)
-        const rawSavings = cardEarnings - currentEarnings;
-        const savings = rawSavings; // Show actual savings, even if negative
-
-        // Debug final calculation
-        logger.info('Final category savings calculation', {
-            cardId: card.id,
-            categoryName: pattern.categoryName,
-            cardEarnings,
-            currentEarnings,
-            rawSavings,
-            savings,
-            cardEarnRate,
-            currentEarnRate
-        });
 
         return {
             categoryName: pattern.categoryName,
             spentAmount: pattern.totalSpent,
-            currentEarnRate,
             cardEarnRate,
-            currentEarnings: isNaN(currentEarnings) ? 0 : currentEarnings,
             cardEarnings: isNaN(cardEarnings) ? 0 : cardEarnings,
-            savings: isNaN(savings) ? 0 : savings,
-            percentageOfTotalSpend: (pattern.totalSpent / totalSpend) * 100
+            percentageOfTotalSpend: (pattern.totalSpent / totalSpend) * 100,
+            monthlyCap
         };
     }
 
@@ -544,8 +447,8 @@ export class SavingsCalculatorService {
 
         // Pattern-based matching for common merchant patterns
         const merchantMappings: Record<string, string[]> = {
-            'amazon': ['amazon', 'amzn'],
-            'amazonin': ['amazon', 'amzn', 'amazonin'],
+            'amazon': ['amazon', 'amzn', 'amazonpay', 'amazonpayindia'],
+            'amazonin': ['amazon', 'amzn', 'amazonin', 'amazonpay', 'amazonpayindia'],
             'flipkart': ['flipkart', 'fkrt'],
             'myntra': ['myntra'],
             'swiggy': ['swiggy', 'instamart', 'swiggygenie', 'swiggyinstamart', 'swiggyinstamrt'], // Include Instamart as Swiggy partner
@@ -823,7 +726,7 @@ export class SavingsCalculatorService {
                 bestBenefit = {
                     benefit,
                     matchScore,
-                    earnRate: Number(benefit.earnRate || this.DEFAULT_EARN_RATE),
+                    earnRate: Number(benefit.earnRate || 1.0),
                     category: benefit.category?.name || 'General',
                     description: benefit.description || `${benefit.earnRate}% on ${benefit.category?.name || 'purchases'}`
                 };
@@ -932,14 +835,6 @@ export class SavingsCalculatorService {
     /**
      * Get current earning rate for baseline comparison
      */
-    private getCurrentEarnRate(baselineCard: any, pattern: SpendingPattern): number {
-        if (baselineCard) {
-            const baseline = this.findBestBenefit(baselineCard.benefits || [], pattern);
-            return baseline ? baseline.earnRate : this.BASELINE_CASHBACK;
-        }
-        return this.BASELINE_CASHBACK;
-    }
-
     /**
      * Get point value multiplier for different reward programs from database
      */
@@ -998,42 +893,29 @@ export class SavingsCalculatorService {
     /**
      * Create empty savings analysis for edge cases
      */
-    private createEmptySavingsAnalysis(cardId: string, annualFee: number): CardSavingsAnalysis {
+    private createEmptySavingsAnalysis(cardId: string, joiningFee: number, annualFee: number): CardSavingsAnalysis {
         return {
             cardId,
-            totalCurrentEarnings: 0,
-            totalPotentialEarnings: 0,
-            netSavings: -annualFee,
-            grossSavings: 0,
-            annualFee,
-            yearlyROI: annualFee > 0 ? -100 : 0,
-            monthsToBreakeven: null,
+            statementPeriodEarnings: 0,
             categoryBreakdown: [],
             signupBonusValue: 0,
-            totalFirstYearValue: -annualFee
+            joiningFee,
+            annualFee
         };
     }
 
     /**
-     * Calculate total value including signup bonus for first year
+     * Calculate total value including signup bonus for statement period
      */
-    calculateFirstYearValue(
-        savings: CardSavingsAnalysis,
-        projectedAnnualSpend?: number
+    calculateStatementPeriodValue(
+        savings: CardSavingsAnalysis
     ): number {
-        let firstYearSavings = savings.netSavings;
-
-        // If we have projected annual spend and current data is partial
-        if (projectedAnnualSpend && projectedAnnualSpend > savings.totalCurrentEarnings * 100) {
-            const spendMultiplier = projectedAnnualSpend / (savings.totalCurrentEarnings * 100);
-            firstYearSavings = savings.grossSavings * spendMultiplier - savings.annualFee;
-        }
-
-        return firstYearSavings + savings.signupBonusValue;
+        // Just return earnings + signup bonus for the statement period
+        return savings.statementPeriodEarnings + savings.signupBonusValue;
     }
 
     /**
-     * Compare multiple cards and rank by savings potential
+     * Compare multiple cards and rank by earnings potential
      */
     async compareCards(
         cards: any[],
@@ -1044,8 +926,8 @@ export class SavingsCalculatorService {
             cards.map(card => this.calculateCardSavings(card, spendingPatterns, baselineCard))
         );
 
-        // Sort by total first year value (net savings + signup bonus)
-        return analyses.sort((a, b) => b.totalFirstYearValue - a.totalFirstYearValue);
+        // Sort by statement period earnings
+        return analyses.sort((a, b) => b.statementPeriodEarnings - a.statementPeriodEarnings);
     }
 
     /**
@@ -1055,7 +937,6 @@ export class SavingsCalculatorService {
         analyses: CardSavingsAnalysis[],
         criteria: {
             maxAnnualFee?: number;
-            minROI?: number;
             prioritizeNoFee?: boolean;
             prioritizeSignupBonus?: boolean;
         } = {}
@@ -1067,25 +948,19 @@ export class SavingsCalculatorService {
             filtered = filtered.filter(a => a.annualFee <= (criteria.maxAnnualFee || 0));
         }
 
-        if (criteria.minROI) {
-            filtered = filtered.filter(a =>
-                a.yearlyROI >= (criteria.minROI || 0) || a.annualFee === 0
-            );
-        }
-
         // Apply sorting preferences
         if (criteria.prioritizeNoFee) {
             filtered.sort((a, b) => {
                 if (a.annualFee === 0 && b.annualFee > 0) return -1;
                 if (a.annualFee > 0 && b.annualFee === 0) return 1;
-                return b.totalFirstYearValue - a.totalFirstYearValue;
+                return b.statementPeriodEarnings - a.statementPeriodEarnings;
             });
         } else if (criteria.prioritizeSignupBonus) {
             filtered.sort((a, b) => {
                 if (Math.abs(a.signupBonusValue - b.signupBonusValue) > 50) {
                     return b.signupBonusValue - a.signupBonusValue;
                 }
-                return b.totalFirstYearValue - a.totalFirstYearValue;
+                return b.statementPeriodEarnings - a.statementPeriodEarnings;
             });
         }
 

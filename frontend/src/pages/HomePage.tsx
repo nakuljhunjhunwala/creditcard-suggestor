@@ -55,8 +55,9 @@ export function HomePage() {
         </h1>
         
         <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-          Upload your credit card statement and get AI-powered recommendations 
-          to maximize your rewards and optimize your spending.
+          Not using the right credit card? Let your spending pick the right one for you. 
+          Know how much you're losing under a minute. Upload your credit card statement to 
+          get personalised credit card suggestions.
         </p>
         
         <Button 
@@ -65,7 +66,7 @@ export function HomePage() {
           disabled={isLoading}
           className="text-lg px-8 py-3 bg-primary text-primary-foreground hover:bg-primary/90"
         >
-          {isLoading ? 'Creating Session...' : 'Start Free Analysis'}
+          {isLoading ? 'Creating Session...' : 'Find my card'}
         </Button>
         
         {error && (
@@ -102,49 +103,6 @@ export function HomePage() {
         </div>
       </div>
 
-      {/* Benefits Section */}
-      <div className="container mx-auto px-4 py-16">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold mb-4 text-foreground">Why Choose Our Service?</h2>
-          <p className="text-muted-foreground text-lg">
-            Get the most out of your credit cards with data-driven insights
-          </p>
-        </div>
-        
-        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-foreground">🔒 Secure & Private</h3>
-            <p className="text-muted-foreground">
-              Your financial data is processed securely and never stored permanently. 
-              Sessions expire automatically for your privacy.
-            </p>
-          </div>
-          
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-foreground">🤖 AI-Powered Analysis</h3>
-            <p className="text-muted-foreground">
-              Advanced AI categorizes your spending and identifies optimization 
-              opportunities you might have missed.
-            </p>
-          </div>
-          
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-foreground">💡 Actionable Insights</h3>
-            <p className="text-muted-foreground">
-              Get specific credit card recommendations with detailed breakdowns 
-              of potential savings and benefits.
-            </p>
-          </div>
-          
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-foreground">⚡ Fast Results</h3>
-            <p className="text-muted-foreground">
-              Get your analysis in minutes, not hours. Our efficient processing 
-              delivers insights when you need them.
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

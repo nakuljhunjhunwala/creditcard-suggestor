@@ -914,43 +914,21 @@ export class RecommendationService {
         const allRecommendations = await Promise.all(recommendationPromises);
         const validRecommendations = allRecommendations.filter(rec => rec !== null) as CardRecommendation[];
 
-        // PRIMARY SORT: Net savings (most important for user value)
-        // SECONDARY SORT: Score (for feature alignment)
+        // PRIMARY SORT: Statement period earnings (most important for user value)
+        // User wants to see cards ranked by how much they would have earned
         const sortedRecommendations = validRecommendations
             .sort((a, b) => {
-                // First priority: Positive savings always beats negative savings
-                const aSavings = a.potentialSavings || 0;
-                const bSavings = b.potentialSavings || 0;
-                const aPositive = aSavings > 0;
-                const bPositive = bSavings > 0;
-                const aNegative = aSavings < 0;
-                const bNegative = bSavings < 0;
+                // Sort by statement period earnings (estimatedAnnualCashback)
+                const aEarnings = a.estimatedAnnualCashback || 0;
+                const bEarnings = b.estimatedAnnualCashback || 0;
 
-                if (aPositive && !bPositive) return -1; // a wins (positive vs negative/zero)
-                if (!aPositive && bPositive) return 1;  // b wins (positive vs negative/zero)
-
-                // If both positive, sort by higher savings amount
-                if (aPositive && bPositive) {
-                    return bSavings - aSavings; // Higher savings first
+                // Higher earnings first
+                if (Math.abs(aEarnings - bEarnings) > 0.01) {
+                    return bEarnings - aEarnings;
                 }
 
-                // If both negative, prefer less negative (closer to breakeven)
-                if (aNegative && bNegative) {
-                    return bSavings - aSavings; // Less negative first
-                }
-
-                // If one is negative and the other is zero, prefer zero
-                if (aNegative && !bNegative) return 1;  // b wins (zero vs negative)
-                if (!aNegative && bNegative) return -1; // a wins (zero vs negative)
-
-                // If both are zero or nearly equal savings, sort by score
-                const savingsDiff = Math.abs(aSavings - bSavings);
-                if (savingsDiff < 0.01) { // Savings are essentially equal
-                    return b.score - a.score; // Higher score first
-                }
-
-                // Default: sort by savings amount
-                return bSavings - aSavings;
+                // If earnings are equal, sort by score as tiebreaker
+                return b.score - a.score;
             })
             .map((rec, index) => ({ ...rec, rank: index + 1 }));
 
@@ -985,42 +963,76 @@ export class RecommendationService {
             const primaryReason = this.generatePrimaryReason(card, savings, patterns);
             const confidenceScore = this.calculateConfidenceScore(card, savings, patterns, config);
 
-            // Project savings to annual if we have projection data
-            const currentTotalSpend = savings.categoryBreakdown.reduce((sum, cat) => sum + cat.spentAmount, 0);
-            const projectionMultiplier = projectedAnnualSpending && currentTotalSpend > 0
-                ? projectedAnnualSpending / currentTotalSpend
-                : 1;
+            // Determine card type based on category and fee structure
+            const cardType = this.determineCardType(card);
 
             return {
                 cardId: card.id,
                 rank: 0,
                 score: Math.min(100, Math.max(0, score)),
 
-                // Simplified - what users really care about
-                estimatedAnnualCashback: Math.max(0, savings.totalPotentialEarnings * projectionMultiplier),
+                // Statement period earnings (no annualization)
+                estimatedAnnualCashback: Math.max(0, savings.statementPeriodEarnings),
                 signupBonusValue: savings.signupBonusValue,
+                cardType,
 
                 // Contextual information
                 primaryReason,
                 pros,
                 cons,
-                benefitBreakdown: this.convertSavingsToBreakdown(savings, projectedAnnualSpending),
+                benefitBreakdown: this.convertSavingsToBreakdown(savings),
                 confidenceScore,
 
-                // Legacy fields (hidden from main response but kept for compatibility)
-                statementSavings: savings.netSavings,
-                statementEarnings: savings.totalPotentialEarnings,
-                annualSavings: savings.netSavings * projectionMultiplier,
-                annualEarnings: savings.totalPotentialEarnings * projectionMultiplier,
-                potentialSavings: savings.netSavings * projectionMultiplier,
-                currentEarnings: savings.totalCurrentEarnings * projectionMultiplier,
-                yearlyEstimate: savings.totalPotentialEarnings * projectionMultiplier,
-                feeBreakeven: savings.monthsToBreakeven || undefined,
+                // Legacy fields for backward compatibility
+                statementSavings: 0,
+                statementEarnings: savings.statementPeriodEarnings,
+                annualSavings: 0,
+                annualEarnings: 0,
+                potentialSavings: 0,
+                currentEarnings: 0,
+                yearlyEstimate: savings.statementPeriodEarnings,
+                feeBreakeven: undefined,
             };
         } catch (error) {
             logger.error('Error building recommendation from savings', { cardId: card.id, error });
             return null;
         }
+    }
+
+    /**
+     * Determine card type based on category and fee structure
+     */
+    private determineCardType(card: EnhancedCreditCard): string {
+        const annualFee = card.feeStructure?.annualFee || 0;
+        const categoryName = card.category?.name?.toLowerCase() || '';
+
+        // Super Premium
+        if (annualFee >= 10000 || categoryName.includes('super premium') || categoryName.includes('black')) {
+            return 'Super Premium';
+        }
+
+        // Premium
+        if (annualFee >= 2500 || categoryName.includes('premium') || categoryName.includes('gold')) {
+            return 'Premium';
+        }
+
+        // Lifestyle
+        if (categoryName.includes('lifestyle') || categoryName.includes('shopping')) {
+            return 'Lifestyle';
+        }
+
+        // Travel & Fuel
+        if (categoryName.includes('travel') || categoryName.includes('fuel') || categoryName.includes('miles')) {
+            return 'Travel & Fuel';
+        }
+
+        // Cashback
+        if (categoryName.includes('cashback') || card.rewardStructure?.rewardType === 'cashback') {
+            return 'Cashback';
+        }
+
+        // Entry-Level (default for low/no fee cards)
+        return 'Entry-Level';
     }
 
     /**
@@ -1117,18 +1129,19 @@ export class RecommendationService {
     }
 
     /**
-     * Calculate first-year value score using configuration
+     * Calculate statement period value score using configuration
      */
-    private calculateFirstYearValueScore(savings: CardSavingsAnalysis, config: RecommendationConfig): number {
-        const firstYearValue = savings.totalFirstYearValue;
+    private calculateStatementPeriodValueScore(savings: CardSavingsAnalysis, config: RecommendationConfig): number {
+        const periodValue = savings.statementPeriodEarnings + savings.signupBonusValue;
 
-        if (firstYearValue >= FIRST_YEAR_VALUE_TIERS.EXCELLENT) return 100;
-        if (firstYearValue >= FIRST_YEAR_VALUE_TIERS.VERY_GOOD) return 80;
-        if (firstYearValue >= FIRST_YEAR_VALUE_TIERS.GOOD) return 60;
-        if (firstYearValue >= FIRST_YEAR_VALUE_TIERS.FAIR) return 40;
-        if (firstYearValue >= FIRST_YEAR_VALUE_TIERS.POOR) return 20;
+        // Use relative thresholds for statement period
+        if (periodValue >= 5000) return 100;
+        if (periodValue >= 3000) return 80;
+        if (periodValue >= 2000) return 60;
+        if (periodValue >= 1000) return 40;
+        if (periodValue >= 500) return 20;
 
-        return Math.max(0, 20 + (firstYearValue / 100));
+        return Math.max(0, 20 + (periodValue / 50));
     }
 
     /**
@@ -1207,17 +1220,19 @@ export class RecommendationService {
         config: RecommendationConfig
     ): number {
         const annualFee = savings.annualFee;
-        const grossSavings = savings.grossSavings;
+        const earnings = savings.statementPeriodEarnings;
 
         if (annualFee === 0) {
-            return grossSavings > 0 ? 100 : 60;
+            return earnings > 0 ? 100 : 60;
         }
 
-        if (grossSavings <= 0) {
+        if (earnings <= 0) {
             return Math.max(0, 50 - (annualFee / 100));
         }
 
-        const roi = (grossSavings / annualFee) * 100;
+        // For statement period, estimate ROI based on earnings vs fee
+        const estimatedAnnualEarnings = earnings * 12; // Simple projection
+        const roi = (estimatedAnnualEarnings / annualFee) * 100;
 
         if (roi >= ROI_TIERS.EXCELLENT) return 100;
         if (roi >= ROI_TIERS.VERY_GOOD) return 90;
@@ -1345,7 +1360,9 @@ export class RecommendationService {
             penalty += config.penaltyFactors.inactiveCard;
         }
 
-        if (savings.annualFee > config.thresholds.highAnnualFee && savings.grossSavings < savings.annualFee) {
+        // Penalize high fee with low earnings
+        const estimatedAnnualEarnings = savings.statementPeriodEarnings * 12;
+        if (savings.annualFee > config.thresholds.highAnnualFee && estimatedAnnualEarnings < savings.annualFee) {
             penalty += config.penaltyFactors.highFeeLowBenefit;
         }
 
@@ -1378,8 +1395,8 @@ export class RecommendationService {
         if (card.acceleratedRewards?.length > 0) confidence += 0.1;
         if ((card.additionalBenefits as any)?.length > 0) confidence += 0.05;
 
-        if (savings.grossSavings > 0) confidence += 0.1;
-        if (savings.monthsToBreakeven && savings.monthsToBreakeven <= config.thresholds.quickBreakevenMonths) confidence += 0.05;
+        if (savings.statementPeriodEarnings > 0) confidence += 0.1;
+        if (savings.annualFee === 0) confidence += 0.05; // No-fee cards are safer recommendations
 
         return Math.min(1.0, confidence);
     }
@@ -1503,26 +1520,21 @@ export class RecommendationService {
     ): Promise<string[]> {
         const pros: string[] = [];
 
-        if (savings.netSavings > 1000) {
-            pros.push(`Save ₹${Math.round(savings.netSavings)} annually based on your spending`);
-        } else if (savings.netSavings > 0) {
-            pros.push(`Earn ₹${Math.round(savings.netSavings)} extra annually`);
+        // Statement period earnings
+        if (savings.statementPeriodEarnings > 500) {
+            pros.push(`Earn ₹${Math.round(savings.statementPeriodEarnings)} with this card for this statement period`);
+        } else if (savings.statementPeriodEarnings > 0) {
+            pros.push(`Extra earnings: ₹${Math.round(savings.statementPeriodEarnings)} for this period`);
         }
 
         if (savings.signupBonusValue > 500) {
             pros.push(`Welcome benefits worth ₹${Math.round(savings.signupBonusValue)}`);
         }
 
-        if (savings.totalFirstYearValue > 2000) {
-            pros.push(`Excellent first-year value: ₹${Math.round(savings.totalFirstYearValue)}`);
-        }
-
         if (card.isLifetimeFree) {
             pros.push('Lifetime free - no annual fee ever');
         } else if ((card.feeStructure as any)?.annualFee === 0) {
             pros.push('No annual fee');
-        } else if (savings.monthsToBreakeven && savings.monthsToBreakeven <= 6) {
-            pros.push(`Annual fee pays for itself in ${Math.ceil(savings.monthsToBreakeven)} months`);
         }
 
         const topCategory = patterns[0];
@@ -1574,16 +1586,14 @@ export class RecommendationService {
         const cons: string[] = [];
 
         const annualFee = (card.feeStructure as any)?.annualFee || 0;
-        if (annualFee > 0) {
-            if (!savings.monthsToBreakeven || savings.monthsToBreakeven > 24) {
-                cons.push(`High annual fee of ₹${annualFee}`);
-            } else if (savings.monthsToBreakeven > 12) {
-                cons.push(`Takes ${Math.ceil(savings.monthsToBreakeven)} months to break even`);
-            }
+        if (annualFee > 2000) {
+            cons.push(`High annual fee of ₹${annualFee}`);
+        } else if (annualFee > 0 && annualFee <= 2000) {
+            cons.push(`Annual fee: ₹${annualFee}`);
         }
 
-        if (savings.netSavings < 0) {
-            cons.push('May not provide significant savings based on current spending');
+        if (savings.statementPeriodEarnings < 100) {
+            cons.push('Limited earnings potential based on current spending');
         }
 
         const eligibility = card.eligibilityRequirements as any;
@@ -1674,36 +1684,31 @@ export class RecommendationService {
         savings: CardSavingsAnalysis,
         patterns: SpendingPattern[]
     ): string {
-        const bestSavingsCategory = savings.categoryBreakdown
-            .filter(c => c.savings > 0)
-            .sort((a, b) => b.savings - a.savings)[0];
+        const bestEarningsCategory = savings.categoryBreakdown
+            .sort((a, b) => b.cardEarnings - a.cardEarnings)[0];
 
-        if (bestSavingsCategory && bestSavingsCategory.cardEarnRate >= 5) {
-            return `Outstanding ${bestSavingsCategory.cardEarnRate}% rewards on ${bestSavingsCategory.categoryName}`;
+        if (bestEarningsCategory && bestEarningsCategory.cardEarnRate >= 5) {
+            return `Outstanding ${bestEarningsCategory.cardEarnRate}% rewards on ${bestEarningsCategory.categoryName}`;
         }
 
-        if (savings.totalFirstYearValue > 3000) {
-            return `Exceptional first-year value of ₹${Math.round(savings.totalFirstYearValue)}`;
+        if (savings.statementPeriodEarnings > 1000) {
+            return `Earn ₹${Math.round(savings.statementPeriodEarnings)} for this statement period`;
         }
 
-        if (card.isLifetimeFree && savings.grossSavings > 500) {
-            return `Lifetime free card with ₹${Math.round(savings.grossSavings)} annual savings`;
+        if (card.isLifetimeFree && savings.statementPeriodEarnings > 200) {
+            return `Lifetime free card with ₹${Math.round(savings.statementPeriodEarnings)} earnings`;
         }
 
         const topPattern = patterns[0];
-        if (topPattern && bestSavingsCategory) {
+        if (topPattern && bestEarningsCategory) {
             const categoryName = topPattern.categoryName;
             if (categoryName.includes('E-commerce') || categoryName.includes('Online')) {
-                return `Perfect for online shopping with ${bestSavingsCategory.cardEarnRate}% rewards`;
+                return `Perfect for online shopping with ${bestEarningsCategory.cardEarnRate}% rewards`;
             } else if (categoryName.includes('Dining') || categoryName.includes('Food')) {
-                return `Excellent for food lovers with ${bestSavingsCategory.cardEarnRate}% on dining`;
+                return `Excellent for food lovers with ${bestEarningsCategory.cardEarnRate}% on dining`;
             } else if (categoryName.includes('Travel')) {
-                return `Ideal travel companion with ${bestSavingsCategory.cardEarnRate}% on travel`;
+                return `Ideal travel companion with ${bestEarningsCategory.cardEarnRate}% on travel`;
             }
-        }
-
-        if (savings.netSavings > 1000) {
-            return `Strong earning potential with ₹${Math.round(savings.netSavings)} annual savings`;
         }
 
         if (card.isLifetimeFree) {
@@ -1720,22 +1725,17 @@ export class RecommendationService {
     /**
      * Convert savings analysis to benefit breakdown format
      */
-    private convertSavingsToBreakdown(savings: CardSavingsAnalysis, projectedAnnualSpending?: number): any[] {
+    private convertSavingsToBreakdown(savings: CardSavingsAnalysis): any[] {
         return savings.categoryBreakdown.map(category => {
-            // Calculate projection multiplier if we have annual spending data
-            const currentTotalSpend = savings.categoryBreakdown.reduce((sum, cat) => sum + cat.spentAmount, 0);
-            const projectionMultiplier = projectedAnnualSpending && currentTotalSpend > 0
-                ? projectedAnnualSpending / currentTotalSpend
-                : 1;
-
             return {
                 category: category.categoryName,
-                currentRate: category.currentEarnRate,
+                currentRate: 0, // No baseline comparison
                 cardRate: category.cardEarnRate,
-                spentAmount: category.spentAmount * projectionMultiplier, // Project to annual
-                earnedPoints: category.cardEarnings * projectionMultiplier, // Project to annual
-                dollarValue: category.cardEarnings * projectionMultiplier, // Project to annual
-                savingsAmount: category.savings * projectionMultiplier, // Project to annual
+                spentAmount: category.spentAmount, // Statement period amount
+                earnedPoints: category.cardEarnings, // Statement period earnings
+                dollarValue: category.cardEarnings, // Statement period earnings
+                savingsAmount: 0, // No savings calculation
+                monthlyCap: category.monthlyCap // Include monthly cap info
             };
         });
     }

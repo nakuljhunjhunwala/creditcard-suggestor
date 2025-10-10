@@ -80,12 +80,13 @@ export interface CreditCardRecommendation {
     rank: number;
     score: number;
 
-    // Simplified earnings - what the user will earn with this card
-    estimatedAnnualCashback: number;  // Primary metric - annual cashback/rewards value
+    // Statement period earnings (not annualized)
+    estimatedAnnualCashback: number;  // Earnings for the statement period
 
     // Welcome bonus details
     signupBonusValue?: number;
     signupBonusDescription?: string;
+    cardType?: string;  // Entry-Level, Cashback, Travel & Fuel, Lifestyle, Premium, Super Premium
 
     // Card recommendation details
     primaryReason: string;
@@ -97,7 +98,7 @@ export interface CreditCardRecommendation {
     // Optional detailed breakdown
     scoreBreakdown?: ScoreBreakdown;
 
-    // Legacy fields (backwards compatibility - will be removed)
+    // Legacy fields (backwards compatibility)
     potentialSavings?: number;
     currentEarnings?: number;
     yearlyEstimate?: number;
@@ -118,6 +119,7 @@ export interface BenefitBreakdown {
     earnedPoints: number;
     dollarValue: number;
     savingsAmount?: number;
+    monthlyCap?: number; // Monthly capping limit for rewards
 }
 
 export interface ScoreBreakdown {
@@ -298,6 +300,8 @@ export interface RecommendationResponse {
         totalSpend: number;
         topCategory: string;
         totalTransactions: number;
+        statementStartDate?: string | Date;
+        statementEndDate?: string | Date;
     };
     fallback?: boolean;
 }

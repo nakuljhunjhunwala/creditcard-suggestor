@@ -36,9 +36,10 @@ export interface CardRecommendation {
     rank: number;
     score: number;
 
-    // Simplified earnings - what the user really cares about
-    estimatedAnnualCashback: number;  // How much cashback they'll earn per year
+    // Simplified earnings - what the user really cares about (statement period only)
+    estimatedAnnualCashback: number;  // Statement period earnings (not annualized)
     signupBonusValue?: number;        // Welcome bonus value
+    cardType?: string;                // Card type: Entry-Level, Cashback, Travel & Fuel, Lifestyle, Premium, Super Premium
 
     // Contextual information
     primaryReason: string;
@@ -67,6 +68,7 @@ export interface BenefitBreakdown {
     earnedPoints: number;
     dollarValue: number;
     savingsAmount?: number;
+    monthlyCap?: number; // Monthly capping limit for rewards
 }
 
 export interface RecommendationResult {

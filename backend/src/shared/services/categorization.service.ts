@@ -993,9 +993,12 @@ export class CategorizationService {
                 ([, a], [, b]) => b - a,
             )[0]?.[0];
 
-            // Calculate total spend from all transactions in this session
+            // Calculate total spend from POSITIVE transactions only (exclude credits/refunds)
             const totalSpendResult = await prisma.transaction.aggregate({
-                where: { sessionId },
+                where: {
+                    sessionId,
+                    amount: { gt: 0 } // Only positive amounts
+                },
                 _sum: { amount: true },
             });
 

@@ -3,7 +3,6 @@ import { HomePage } from './pages/HomePage';
 import { UploadPage } from './pages/UploadPage';
 import { ProcessingPage } from './pages/ProcessingPage';
 import { ResultsPage } from './pages/ResultsPage';
-import { EnhancedResultsPage } from './pages/EnhancedResultsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 function App() {
@@ -15,8 +14,7 @@ function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/upload/:sessionToken?" element={<UploadPage />} />
             <Route path="/processing/:sessionToken" element={<ProcessingPage />} />
-            <Route path="/results/:sessionToken" element={<EnhancedResultsPage />} />
-            <Route path="/results-legacy/:sessionToken" element={<ResultsPage />} />
+            <Route path="/results/:sessionToken" element={<ResultsPage />} />
           </Routes>
         </div>
       </Router>

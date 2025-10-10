@@ -624,12 +624,22 @@ export class SessionController {
                     };
                 });
 
+                // Limit to top 3 recommendations
+                const top3Recommendations = enhancedRecommendations.slice(0, 3);
+
+                // Get statement period dates from transactions
+                const transactionDates = await prisma.transaction.aggregate({
+                    where: { sessionId: session.id },
+                    _min: { date: true },
+                    _max: { date: true }
+                });
+
                 sendResponse(res, {
                     status: StatusCodes.OK,
                     message: 'Enhanced recommendations retrieved successfully',
                     data: {
                         sessionToken,
-                        recommendations: enhancedRecommendations,
+                        recommendations: top3Recommendations,
                         criteria: recommendationResult.criteria,
                         summary: recommendationResult.summary,
                         analysis: recommendationResult.analysis,
@@ -640,6 +650,8 @@ export class SessionController {
                             totalSpend: Number(session.totalSpend || 0),
                             topCategory: session.topCategory,
                             totalTransactions: session.totalTransactions,
+                            statementStartDate: transactionDates._min.date,
+                            statementEndDate: transactionDates._max.date,
                         },
                     },
                 });
@@ -650,22 +662,32 @@ export class SessionController {
                     error
                 });
 
-                // Fallback to stored recommendations if service fails
+                // Fallback to stored recommendations if service fails (limit to top 3)
                 const storedRecommendations = await recommendationService.getSessionRecommendations(session.id);
+                const top3StoredRecs = storedRecommendations.slice(0, 3);
+
+                // Get statement period dates from transactions
+                const transactionDates = await prisma.transaction.aggregate({
+                    where: { sessionId: session.id },
+                    _min: { date: true },
+                    _max: { date: true }
+                });
 
                 sendResponse(res, {
                     status: StatusCodes.OK,
                     message: 'Recommendations retrieved successfully (cached)',
                     data: {
                         sessionToken,
-                        recommendations: storedRecommendations,
-                        totalRecommendations: storedRecommendations.length,
+                        recommendations: top3StoredRecs,
+                        totalRecommendations: top3StoredRecs.length,
                         generatedAt: new Date(),
                         fallback: true,
                         sessionSummary: {
                             totalSpend: Number(session.totalSpend || 0),
                             topCategory: session.topCategory,
                             totalTransactions: session.totalTransactions,
+                            statementStartDate: transactionDates._min.date,
+                            statementEndDate: transactionDates._max.date,
                         },
                     },
                 });

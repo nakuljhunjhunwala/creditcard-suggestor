@@ -110,9 +110,9 @@ export function UploadPage() {
 
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-4">Upload Your Statement</h1>
+            <h1 className="text-3xl font-bold mb-4">Upload your credit card statement (PDF)</h1>
             <p className="text-muted-foreground">
-              Upload your credit card PDF statement to get started with the analysis
+              Please ensure that the password has been removed from the PDF.
             </p>
           </div>
 
@@ -153,10 +153,6 @@ export function UploadPage() {
                       <p className="text-muted-foreground mt-2">
                         or click to browse files
                       </p>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      <p>Supports PDF files up to 50MB</p>
-                      <p>Your data is processed securely and not stored permanently</p>
                     </div>
                   </div>
                 )}
@@ -202,45 +198,8 @@ export function UploadPage() {
               size="lg"
               className="w-full sm:w-auto"
             >
-              {isLoading ? 'Processing...' : 'Start Analysis'}
+              {isLoading ? 'Processing...' : 'Submit'}
             </Button>
-          </div>
-
-          {/* Info Cards */}
-          <div className="grid md:grid-cols-2 gap-6 mt-12">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Supported Files
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2 text-sm">
-                  <li>• PDF credit card statements</li>
-                  <li>• Files up to 50MB</li>
-                  <li>• Clear, readable text</li>
-                  <li>• Recent statements work best</li>
-                </ul>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5" />
-                  Privacy & Security
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2 text-sm">
-                  <li>• Files processed securely</li>
-                  <li>• No permanent data storage</li>
-                  <li>• Sessions auto-expire</li>
-                  <li>• HTTPS encrypted transfer</li>
-                </ul>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </div>
