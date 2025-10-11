@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSessionStore } from '../store/useSessionStore';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { CreditCard, Upload, Target, BarChart3 } from 'lucide-react';
+import { Upload, Target, BarChart3, ArrowRight } from 'lucide-react';
 import { useEffect } from 'react';
 
 export function HomePage() {
@@ -45,55 +45,82 @@ export function HomePage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-black">
       {/* Hero Section */}
-      <div className="container mx-auto px-4 py-16 text-center">
-        <CreditCard className="h-16 w-16 text-primary mx-auto mb-8" />
-        
-        <h1 className="text-4xl md:text-6xl font-bold mb-6 text-foreground">
-          Credit Card Optimizer
+      <div className="container mx-auto px-4 py-20 md:py-32 text-center">
+        {/* Main Headline */}
+        <h1 className="text-4xl md:text-7xl font-bold mb-8 text-white leading-tight">
+          Not using the right{' '}
+          <span className="bg-gradient-to-r from-purple-400 via-purple-500 to-blue-500 bg-clip-text text-transparent">
+            credit card?
+          </span>
         </h1>
         
-        <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-          Not using the right credit card? Let your spending pick the right one for you. 
-          Know how much you're losing under a minute. Upload your credit card statement to 
-          get personalised credit card suggestions.
+        {/* First Subheading */}
+        <p className="text-xl md:text-2xl text-gray-300 mb-8 max-w-3xl mx-auto">
+          Let your spending pick the right one for you.
+        </p>
+
+        {/* Divider */}
+        <div className="w-24 h-px bg-gray-600 mx-auto mb-8"></div>
+
+        {/* Second Subheading */}
+        <p className="text-xl md:text-2xl text-gray-300 mb-8 max-w-3xl mx-auto">
+          Know how much you're losing.
+        </p>
+
+        {/* Divider */}
+        <div className="w-24 h-px bg-gray-600 mx-auto mb-8"></div>
+
+        {/* Highlighted Text */}
+        <p className="text-lg md:text-xl font-semibold text-cyan-400 mb-6">
+          Zero sales. 100% personalised. All under a minute.
+        </p>
+
+        {/* Description */}
+        <p className="text-base md:text-lg text-gray-400 mb-10 max-w-2xl mx-auto">
+          Upload your credit card statement to get personalised credit card suggestions.
         </p>
         
+        {/* CTA Button */}
         <Button 
           size="lg" 
           onClick={handleStartAnalysis}
           disabled={isLoading}
-          className="text-lg px-8 py-3 bg-primary text-primary-foreground hover:bg-primary/90"
+          className="text-lg px-10 py-6 bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800 text-white font-semibold rounded-full shadow-lg transition-all"
         >
-          {isLoading ? 'Creating Session...' : 'Find my card'}
+          {isLoading ? 'Creating Session...' : (
+            <>
+              Find My Card <ArrowRight className="ml-2 h-5 w-5 inline" />
+            </>
+          )}
         </Button>
         
         {error && (
-          <div className="mt-4 text-destructive text-sm">
+          <div className="mt-6 text-red-400 text-sm">
             {error.message}
           </div>
         )}
       </div>
 
       {/* Features Section */}
-      <div className="bg-muted">
+      <div className="bg-gray-950 border-t border-gray-800">
         <div className="container mx-auto px-4 py-16">
-          <h2 className="text-3xl font-bold text-center mb-12 text-foreground">
+          <h2 className="text-3xl font-bold text-center mb-12 text-white">
             How It Works
           </h2>
           
           <div className="grid md:grid-cols-3 gap-8">
             {features.map((feature, index) => (
-              <Card key={index} className="text-center bg-card text-card-foreground">
+              <Card key={index} className="text-center bg-gray-900 border-gray-800 text-white">
                 <CardHeader>
                   <div className="flex justify-center mb-4">
-                    <feature.icon className="h-12 w-12 text-primary" />
+                    <feature.icon className="h-12 w-12 text-purple-400" />
                   </div>
-                  <CardTitle className="text-foreground">{feature.title}</CardTitle>
+                  <CardTitle className="text-white">{feature.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-base text-muted-foreground">
+                  <p className="text-base text-gray-400">
                     {feature.description}
                   </p>
                 </CardContent>

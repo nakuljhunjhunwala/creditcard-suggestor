@@ -1688,6 +1688,24 @@ export class RecommendationService {
             .sort((a, b) => b.cardEarnings - a.cardEarnings)[0];
 
         if (bestEarningsCategory && bestEarningsCategory.cardEarnRate >= 5) {
+            // Check if it's brand-specific and add brand names
+            if (bestEarningsCategory.categoryName === 'Brand Specific') {
+                // Find the corresponding accelerated reward to get merchant patterns
+                const brandReward = card.acceleratedRewards?.find((reward: any) =>
+                    reward.rewardCategory?.slug === 'brand-specific' ||
+                    reward.rewardCategory?.name === 'Brand Specific'
+                );
+
+                if (brandReward && brandReward.merchantPatterns && brandReward.merchantPatterns.length > 0) {
+                    const merchants = brandReward.merchantPatterns.slice(0, 3); // Show first 3 brands
+                    const merchantList = merchants.map((m: string) =>
+                        m.charAt(0).toUpperCase() + m.slice(1) // Capitalize
+                    ).join(', ');
+                    const moreCount = brandReward.merchantPatterns.length - 3;
+                    const moreText = moreCount > 0 ? ` and ${moreCount} more` : '';
+                    return `Outstanding ${bestEarningsCategory.cardEarnRate}% rewards on ${merchantList}${moreText}`;
+                }
+            }
             return `Outstanding ${bestEarningsCategory.cardEarnRate}% rewards on ${bestEarningsCategory.categoryName}`;
         }
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSessionStore } from '../store/useSessionStore';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent } from '../components/ui/card';
 import { Progress } from '../components/ui/progress';
 import { 
   FileText, 
@@ -110,38 +110,38 @@ export function ProcessingPage() {
   );
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-10">
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
+          <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">
             Analysing your rewards
           </h1>
-          <p className="text-sm md:text-base text-muted-foreground">
+          <p className="text-sm md:text-base text-gray-400">
             Please wait while we show how much you have missed
           </p>
         </div>
 
         {/* Main Progress Card */}
-        <Card className="rounded-lg shadow-sm bg-card border">
+        <Card className="rounded-lg shadow-sm bg-gray-900 border-gray-800">
           <CardContent className="pt-8 pb-8 px-6 md:px-8">
             {/* Animated Icon */}
             <div className="flex justify-center mb-8">
               {jobStatus?.activeJob?.status === 'failed' ? (
-                <AlertCircle className="h-16 w-16 md:h-20 md:w-20 text-red-600" />
+                <AlertCircle className="h-16 w-16 md:h-20 md:w-20 text-red-500" />
               ) : jobStatus?.activeJob?.status === 'completed' ? (
-                <CheckCircle2 className="h-16 w-16 md:h-20 md:w-20 text-primary" />
+                <CheckCircle2 className="h-16 w-16 md:h-20 md:w-20 text-green-500" />
               ) : (
-                <Loader2 className="h-16 w-16 md:h-20 md:w-20 text-primary animate-spin" />
+                <Loader2 className="h-16 w-16 md:h-20 md:w-20 text-purple-500 animate-spin" />
               )}
             </div>
 
             {/* Status Text */}
             <div className="text-center mb-8">
-              <h2 className="text-lg md:text-xl font-bold mb-2 text-foreground">
+              <h2 className="text-lg md:text-xl font-bold mb-2 text-white">
                 {currentStep?.title || 'Processing...'}
               </h2>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-gray-400">
                 {currentStep?.description || 'Please wait while we process your data'}
               </p>
             </div>
@@ -149,20 +149,20 @@ export function ProcessingPage() {
             {/* Progress Bar */}
             <div className="space-y-3 mb-6">
               <div className="flex justify-between text-xs font-bold">
-                <span className="text-muted-foreground">Progress</span>
-                <span className="text-foreground">{effectiveProgress}%</span>
+                <span className="text-gray-400">Progress</span>
+                <span className="text-white">{effectiveProgress}%</span>
               </div>
-              <Progress value={effectiveProgress} className="h-2" />
+              <Progress value={effectiveProgress} className="h-2 bg-gray-800" />
             </div>
 
             {/* Error Display */}
             {(error || (jobStatus?.activeJob?.status === 'failed' && jobStatus?.activeJob?.errorMessage)) && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg mb-4">
+              <div className="p-4 bg-red-900/20 border border-red-800 rounded-lg mb-4">
                 <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-red-900 text-sm">Processing Error</p>
-                    <p className="text-xs text-red-700 break-words mt-1">
+                    <p className="font-bold text-red-400 text-sm">Processing Error</p>
+                    <p className="text-xs text-red-300 break-words mt-1">
                       {jobStatus?.activeJob?.errorMessage || error?.message || 'Request failed with status code 429'}
                     </p>
                   </div>
@@ -172,18 +172,18 @@ export function ProcessingPage() {
 
             {/* Session Stats */}
             {session.totalTransactions && !error && jobStatus?.activeJob?.status !== 'failed' && (
-              <div className="grid grid-cols-2 gap-4 pt-6 border-t">
-                <div className="text-center p-3 bg-muted/30 rounded-lg">
-                  <p className="text-3xl font-bold text-primary">
+              <div className="grid grid-cols-2 gap-4 pt-6 border-t border-gray-800">
+                <div className="text-center p-3 bg-gray-800/50 rounded-lg">
+                  <p className="text-3xl font-bold text-purple-400">
                     {session.totalTransactions}
                   </p>
-                  <p className="text-xs font-semibold text-muted-foreground mt-2">Transactions</p>
+                  <p className="text-xs font-semibold text-gray-400 mt-2">Transactions</p>
                 </div>
-                <div className="text-center p-3 bg-muted/30 rounded-lg">
-                  <p className="text-3xl font-bold text-primary">
+                <div className="text-center p-3 bg-gray-800/50 rounded-lg">
+                  <p className="text-3xl font-bold text-purple-400">
                     {session.categorizedCount || 0}
                   </p>
-                  <p className="text-xs font-semibold text-muted-foreground mt-2">Categorized</p>
+                  <p className="text-xs font-semibold text-gray-400 mt-2">Categorized</p>
                 </div>
               </div>
             )}
